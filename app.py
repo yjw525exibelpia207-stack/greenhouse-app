@@ -6,17 +6,14 @@ from google.oauth2.service_account import Credentials
 # ページ基本設定
 st.set_page_config(page_title="温室管理システム", page_icon="🍇", layout="wide")
 
-# Googleスプレッドシートへの接続設定（Secretsからの読み込みを自動補正）
+# Googleスプレッドシートへの接続設定
 @st.cache_resource
 def init_connection():
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # st.secrets 情報を辞書形式に変換
     service_account_info = dict(st.secrets["gcp_service_account"])
-    
-    # private_key の \n 文字列を実際の改行文字に自動変換
     if "private_key" in service_account_info:
         service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
         
@@ -28,9 +25,10 @@ def init_connection():
 
 try:
     gc = init_connection()
-    # ★ ご自身のGoogleスプレッドシート名に合わせて修正してください
-    sh = gc.open("温室管理データ")
-    worksheet = sh.worksheet("シート1")
+    # スプレッドシート名「温室管理」を開く
+    sh = gc.open("温室管理")
+    # 1枚目のシートを取得
+    worksheet = sh.get_worksheet(0)
     st.sidebar.success("✅ スプレッドシート接続完了")
 except Exception as e:
     st.sidebar.error(f"⚠️ 接続エラー: {e}")
@@ -71,20 +69,23 @@ st.divider()
 st.subheader("📋 測定ログ一覧 (スプレッドシートより取得)")
 
 # スプレッドシートからデータ取得
-data = worksheet.get_all_records()
-if data:
-    log_data = pd.DataFrame(data)
+try:
+    data = worksheet.get_all_records()
+    if data:
+        log_data = pd.DataFrame(data)
 
-    def style_temp_rows(row):
-        if "異常" in str(row.get("判定", "")):
-            return ['background-color: #ffe6e6; color: #990000; font-weight: bold'] * len(row)
-        else:
-            return ['background-color: #f0fff0; color: #006600'] * len(row)
+        def style_temp_rows(row):
+            if "異常" in str(row.get("判定", "")):
+                return ['background-color: #ffe6e6; color: #990000; font-weight: bold'] * len(row)
+            else:
+                return ['background-color: #f0fff0; color: #006600'] * len(row)
 
-    st.dataframe(
-        log_data.style.apply(style_temp_rows, axis=1),
-        use_container_width=True,
-        hide_index=True
-    )
-else:
-    st.info("データがまだありません。上のフォームから登録してください。")
+        st.dataframe(
+            log_data.style.apply(style_temp_rows, axis=1),
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("データがまだありません。上のフォームから登録してください。")
+except Exception as e:
+    st.warning("シートの1行目にヘッダー（日時, 温室名, ボイラー温度, 天側窓温度, 温度差, 判定）が入っているか確認してください。")
