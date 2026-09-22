@@ -6,15 +6,18 @@ from google.oauth2.service_account import Credentials
 # ページ基本設定
 st.set_page_config(page_title="温室管理システム", page_icon="🍇", layout="wide")
 
-# Googleスプレッドシートへの接続設定
+# Googleスプレッドシートへの接続設定（st.secretsから読み込み）
 @st.cache_resource
 def init_connection():
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # service_account.json を読み込みます
-    creds = Credentials.from_service_account_file("service_account.json", scopes=scope)
+    # Secretsに設定したサービスアカウント情報を読み込みます
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scope
+    )
     return gspread.authorize(creds)
 
 try:
