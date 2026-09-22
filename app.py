@@ -6,23 +6,29 @@ from google.oauth2.service_account import Credentials
 # ページ基本設定
 st.set_page_config(page_title="温室管理システム", page_icon="🍇", layout="wide")
 
-# Googleスプレッドシートへの接続設定（st.secretsから読み込み）
+# Googleスプレッドシートへの接続設定（Secretsからの読み込みを自動補正）
 @st.cache_resource
 def init_connection():
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # Secretsに設定したサービスアカウント情報を読み込みます
+    # st.secrets 情報を辞書形式に変換
+    service_account_info = dict(st.secrets["gcp_service_account"])
+    
+    # private_key の \n 文字列を実際の改行文字に自動変換
+    if "private_key" in service_account_info:
+        service_account_info["private_key"] = service_account_info["private_key"].replace("\\n", "\n")
+        
     creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
+        service_account_info,
         scopes=scope
     )
     return gspread.authorize(creds)
 
 try:
     gc = init_connection()
-    # ★ ここにご自身のGoogleスプレッドシート名を入力してください
+    # ★ ご自身のGoogleスプレッドシート名に合わせて修正してください
     sh = gc.open("温室管理データ")
     worksheet = sh.worksheet("シート1")
     st.sidebar.success("✅ スプレッドシート接続完了")
