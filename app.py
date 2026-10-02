@@ -86,7 +86,6 @@ except Exception as e:
     st.stop()
 
 # --- 温室一覧の整理 ---
-# D群（F-3を含む）および パイプハウスの定義・自動取得
 if not df_main.empty and "温室" in df_main.columns:
     d_houses_from_df = [str(x) for x in df_main["温室"].unique() if str(x).strip() != ""]
 else:
@@ -97,7 +96,7 @@ if not df_pipe.empty and "温室" in df_pipe.columns:
 else:
     pipe_houses_from_df = []
 
-# デフォルト温室の定義（データがない場合の初期表示用）
+# デフォルト温室の定義
 default_d = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27", "F-3"]
 default_pipe = ["パイプ1号", "パイプ2号", "パイプ3号"]
 
@@ -108,18 +107,24 @@ pipe_houses = list(dict.fromkeys(pipe_houses_from_df + [h for h in default_pipe 
 if "F-3" not in d_houses and "F-3" not in pipe_houses:
     d_houses.append("F-3")
 
-# --- 最新設定の取得関数 ---
+# --- 最新設定の取得関数 (エラーの原因箇所を改善) ---
 def get_latest_status(house_list, df_target):
     if df_target.empty or "温室" not in df_target.columns:
         return pd.DataFrame({"温室": house_list})
     
     latest_rows = []
+    all_cols = list(df_target.columns)
+    
     for h in house_list:
         house_data = df_target[df_target["温室"].astype(str) == str(h)]
         if not house_data.empty:
-            latest_rows.append(house_data.iloc[-1])
+            # Seriesではなく辞書（dict）として抽出して追加することで型エラーを防ぐ
+            latest_rows.append(house_data.iloc[-1].to_dict())
         else:
-            latest_rows.append({"温室": h})
+            # 未入力ハウス用の空行を作成
+            empty_row = {col: "-" for col in all_cols}
+            empty_row["温室"] = h
+            latest_rows.append(empty_row)
             
     df_latest = pd.DataFrame(latest_rows)
     cols_to_show = [c for c in df_latest.columns if c not in ["最終入力者"]]
@@ -129,7 +134,7 @@ def get_latest_status(house_list, df_target):
 if "selected_house" not in st.session_state:
     st.session_state.selected_house = None
 if "selected_group" not in st.session_state:
-    st.session_state.selected_group = None # "d" または "pipe"
+    st.session_state.selected_group = None
 
 # --- UIレイアウト ---
 tab_main, tab_log = st.tabs(["📊 現在の設定一覧", "📋 全履歴ログ"])
@@ -174,7 +179,6 @@ with tab_main:
         house = st.session_state.selected_house
         group = st.session_state.selected_group
         
-        # 保存先ワークシートとデータフレームの判定
         if group == "pipe" and pipe_ws_name:
             target_ws = ws_pipe
             target_df = df_pipe
@@ -192,7 +196,6 @@ with tab_main:
         
         st.subheader(f"⚙️ {house} の設定変更")
         
-        # 選択したハウスの最新設定を初期値に反映
         house_latest = target_df[target_df["温室"].astype(str) == str(house)] if not target_df.empty else pd.DataFrame()
         latest_val = house_latest.iloc[-1] if not house_latest.empty else {}
         
