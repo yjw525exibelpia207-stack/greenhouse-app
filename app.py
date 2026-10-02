@@ -20,12 +20,10 @@ st.markdown("""
         padding-bottom: 3rem;
         max-width: 500px;
     }
-    /* アプリ風メインボタン */
     div.stButton > button {
         border-radius: 10px;
         font-weight: bold;
     }
-    /* 保存ボタン */
     .save-btn > button {
         width: 100%;
         height: 3.2em;
@@ -35,7 +33,6 @@ st.markdown("""
         border: none !important;
         margin-top: 15px;
     }
-    /* 戻るボタン */
     .back-btn > button {
         background-color: #666666 !important;
         color: white !important;
@@ -91,85 +88,134 @@ if not d_houses:
 if not pipe_houses:
     pipe_houses = ["パイプ1号", "パイプ2号", "パイプ3号"]
 
-# --- メインタブ：入力/選択とログ ---
-tab_main, tab_log = st.tabs(["🏡 ハウス選択・設定", "📋 ログ閲覧"])
+# 各温室の最新設定を取得する関数
+def get_latest_status(house_list):
+    if df_raw.empty or "温室" not in df_raw.columns:
+        return pd.DataFrame()
+    
+    # 温室ごとに最新の1件（最後の行）を取得
+    latest_rows = []
+    for h in house_list:
+        house_data = df_raw[df_raw["温室"].astype(str) == str(h)]
+        if not house_data.empty:
+            latest_rows.append(house_data.iloc[-1])
+            
+    if latest_rows:
+        df_latest = pd.DataFrame(latest_rows)
+        # 不要な列（最終入力者など）があれば適宜絞り込み
+        cols_to_show = [c for c in df_latest.columns if c not in ["最終入力者"]]
+        return df_latest[cols_to_show]
+    else:
+        return pd.DataFrame()
 
-# --- 1. ハウス選択・設定タブ ---
+# --- メインタブ：現在設定一覧と全ログ ---
+tab_main, tab_log = st.tabs(["📊 現在の設定一覧", "📋 全履歴ログ"])
+
+# --- 1. 現在の設定一覧タブ ---
 with tab_main:
     
-    # 【パターンA】ハウスが未選択の場合：一覧ボタン画面を表示
+    # 【パターンA】ハウス未選択：各ハウスの最新設定表 ＋ 設定変更へ進むボタン
     if st.session_state.selected_house is None:
-        st.subheader("📍 操作するハウスを選択してください")
+        st.subheader("📍 各ハウスの現在設定")
         
-        tab_list_d, tab_list_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
+        tab_status_d, tab_status_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
         
-        # ハウス一覧をグリッド状の押しやすい大ボタンで表示する関数
-        def render_house_grid(house_list, prefix):
-            cols = st.columns(2)  # 2列並びのボタン
+        def render_status_view(house_list, prefix):
+            df_latest = get_latest_status(house_list)
+            
+            if not df_latest.empty:
+                st.dataframe(
+                    df_latest,
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("最新データがありません。")
+                
+            st.write("---")
+            st.markdown("👇 **設定を変更したいハウスを選択してください**")
+            
+            # ハウス選択ボタン一覧
+            cols = st.columns(2)
             for idx, house in enumerate(house_list):
                 col = cols[idx % 2]
                 with col:
-                    if st.button(f"🏠 {house}", key=f"btn_{prefix}_{house}", use_container_width=True):
+                    if st.button(f"⚙️ {house} の設定変更", key=f"select_{prefix}_{house}", use_container_width=True):
                         st.session_state.selected_house = house
                         st.rerun()
 
-        with tab_list_d:
-            render_house_grid(d_houses, "d")
+        with tab_status_d:
+            render_status_view(d_houses, "d")
 
-        with tab_list_pipe:
-            render_house_grid(pipe_houses, "pipe")
+        with tab_status_pipe:
+            render_status_view(pipe_houses, "pipe")
 
-    # 【パターンB】ハウスが選択されている場合：設定画面を表示
+    # 【パターンB】ハウス選択済み：設定変更フォーム
     else:
         house = st.session_state.selected_house
         
         # 戻るボタン
         st.markdown('<div class="back-btn">', unsafe_allow_html=True)
-        if st.button("⬅️ ハウス一覧に戻る", use_container_width=True):
+        if st.button("⬅️ 設定一覧に戻る", use_container_width=True):
             st.session_state.selected_house = None
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         
-        st.subheader(f"⚙️ {house} の設定変更")
+        st.subheader(f"⚙️️ {house} の設定変更")
+        
+        # 選択したハウスの最新設定を取得して初期値に反映
+        house_latest = df_raw[df_raw["温室"].astype(str) == str(house)] if not df_raw.empty else pd.DataFrame()
+        latest_val = house_latest.iloc[-1] if not house_latest.empty else {}
         
         with st.form("house_detail_form", clear_on_submit=True):
             
-            # 設定項目のボタン切替
+            # 設定項目のボタン切替（最新設定があればそれを初期選択）
+            curr_side = str(latest_val.get("サイド開閉", "全閉"))
             side_window = st.segmented_control(
                 "🪟 サイド開閉",
                 options=["全開", "半開", "全閉", "-"],
-                default="全閉"
+                default=curr_side if curr_side in ["全開", "半開", "全閉", "-"] else "全閉"
             )
             
+            curr_shading = str(latest_val.get("遮光", "開け"))
             shading = st.segmented_control(
                 "☀️ 遮光カーテン",
                 options=["開け", "閉め", "9-15", "10-14", "-"],
-                default="開け"
+                default=curr_shading if curr_shading in ["開け", "閉め", "9-15", "10-14", "-"] else "開け"
             )
             
+            curr_boiler = str(latest_val.get("ボイラー状態", "停止中"))
             boiler_status = st.segmented_control(
                 "🔥 ボイラー状態",
                 options=["停止中", "稼働中", "自動", "-"],
-                default="停止中"
+                default=curr_boiler if curr_boiler in ["停止中", "稼働中", "自動", "-"] else "停止中"
             )
             
             st.write("---")
             
-            # 各種温度設定（数値入力）
+            # 各種温度設定（最新値が数値なら初期値にセット）
+            def safe_float(val, default):
+                try: return float(val)
+                except: return default
+
             col1, col2 = st.columns(2)
             with col1:
-                boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=15.0, step=0.5)
+                b_val = safe_float(latest_val.get("ボイラー温度"), 15.0)
+                boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=b_val, step=0.5)
             with col2:
-                window_temp = st.number_input("天側窓設定温度 (°C)", value=20.0, step=0.5)
+                w_val = safe_float(latest_val.get("天側窓温度"), 20.0)
+                window_temp = st.number_input("天側窓設定温度 (°C)", value=w_val, step=0.5)
                 
             col3, col4 = st.columns(2)
             with col3:
-                upper_window_temp = st.number_input("上段開閉温度 (°C)", value=22.0, step=0.5)
+                uw_val = safe_float(latest_val.get("上段開閉温度"), 22.0)
+                upper_window_temp = st.number_input("上段開閉温度 (°C)", value=uw_val, step=0.5)
             with col4:
+                curr_dh = str(latest_val.get("除湿機", "-"))
                 dehumidifier = st.segmented_control(
                     "💧 除湿機",
                     options=["稼働", "停止", "-"],
-                    default="-"
+                    default=curr_dh if curr_dh in ["稼働", "停止", "-"] else "-"
                 )
             
             # 保存ボタン
@@ -204,7 +250,7 @@ with tab_main:
 
 # --- 2. ログ閲覧タブ ---
 with tab_log:
-    st.subheader("📋 最新の設定・測定ログ")
+    st.subheader("📋 最新の設定・測定ログ（全履歴）")
     
     if not df_raw.empty:
         log_tab_d, log_tab_pipe = st.tabs(["🏢 D群 ログ", "🏠 パイプハウス ログ"])
