@@ -70,25 +70,25 @@ except Exception as e:
 # --- メインタブ：入力フォームとログ ---
 tab_input, tab_log = st.tabs(["📝 ハウス設定・記録", "📋 ログ閲覧"])
 
+# スプレッドシートから実際に入力されている温室名を取得
+if not df_raw.empty and "温室" in df_raw.columns:
+    all_greenhouses = [str(x) for x in df_raw["温室"].unique() if str(x).strip() != ""]
+else:
+    all_greenhouses = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27", "パイプ1号", "パイプ2号"]
+
+# D群とパイプハウスに振り分け（「D」が含まれるかどうか）
+d_houses = [h for h in all_greenhouses if "D" in h or "d" in h]
+pipe_houses = [h for h in all_greenhouses if h not in d_houses]
+
+if not d_houses:
+    d_houses = all_greenhouses
+if not pipe_houses:
+    pipe_houses = ["パイプハウス1", "パイプハウス2"]
+
+
 # --- 1. ハウス設定・記録タブ ---
 with tab_input:
     st.subheader("⚙️ ハウス設定変更")
-    
-    # スプレッドシートから実際に入力されている温室名を取得
-    if not df_raw.empty and "温室" in df_raw.columns:
-        all_greenhouses = [str(x) for x in df_raw["温室"].unique() if str(x).strip() != ""]
-    else:
-        # 万が一取得できない場合のデフォルト値
-        all_greenhouses = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27", "パイプ1号", "パイプ2号"]
-    
-    # D群とパイプハウスに自動振分け（「D-」または「D」が含まれるかどうか）
-    d_houses = [h for h in all_greenhouses if "D" in h or "d" in h]
-    pipe_houses = [h for h in all_greenhouses if h not in d_houses]
-    
-    if not d_houses:
-        d_houses = all_greenhouses
-    if not pipe_houses:
-        pipe_houses = ["パイプハウス1", "パイプハウス2"]
 
     # 群切り替え用サブタブ
     group_d, group_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
@@ -149,7 +149,7 @@ with tab_input:
             if submitted:
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # スプレッドシートの1行目の列名に合わせて dictionary を作成（動的に一致）
+                # スプレッドシートの1行目の列名に合わせて dictionary を作成
                 row_data = {
                     "温室": greenhouse_name,
                     "サイド開閉": side_window,
@@ -186,13 +186,34 @@ with tab_log:
     st.subheader("📋 最新の設定・測定ログ")
     
     if not df_raw.empty:
-        # 直近のデータを上に表示
+        # ログ切り替え用サブタブ（D群 / パイプハウス）
+        log_tab_d, log_tab_pipe = st.tabs(["🏢 D群 ログ", "🏠 パイプハウス ログ"])
+        
+        # ログを最新順にソート
         df_reversed = df_raw.iloc[::-1].reset_index(drop=True)
         
-        st.dataframe(
-            df_reversed,
-            use_container_width=True,
-            hide_index=True
-        )
+        # D群ログ表示処理
+        with log_tab_d:
+            if "温室" in df_reversed.columns:
+                df_d = df_reversed[df_reversed["温室"].astype(str).isin(d_houses)]
+            else:
+                df_d = df_reversed
+                
+            if not df_d.empty:
+                st.dataframe(df_d, use_container_width=True, hide_index=True)
+            else:
+                st.info("D群のデータがありません。")
+                
+        # パイプハウスログ表示処理
+        with log_tab_pipe:
+            if "温室" in df_reversed.columns:
+                df_pipe = df_reversed[df_reversed["温室"].astype(str).isin(pipe_houses)]
+            else:
+                df_pipe = df_reversed
+                
+            if not df_pipe.empty:
+                st.dataframe(df_pipe, use_container_width=True, hide_index=True)
+            else:
+                st.info("パイプハウスのデータがありません。")
     else:
         st.info("データがありません。")
