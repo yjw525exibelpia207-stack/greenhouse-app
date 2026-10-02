@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# カスタムCSS（ボタン風ラジオボタンとアプリ風デザイン）
+# カスタムCSS（ボタン風UIとアプリ風デザイン）
 st.markdown("""
 <style>
     .block-container {
@@ -32,7 +32,6 @@ st.markdown("""
         border: none;
         margin-top: 10px;
     }
-    /* ラジオボタンをアプリ風ボタン化 */
     div[data-testid="stMarkdownContainer"] > p {
         font-weight: bold;
         margin-bottom: 0.2rem;
@@ -65,73 +64,85 @@ except Exception as e:
     st.error(f"⚠️ 接続エラーが発生しました: {e}")
     st.stop()
 
-# --- AppSheet風タブナビゲーション ---
+# --- メインタブ：入力フォームとログ ---
 tab_input, tab_log = st.tabs(["📝 ハウス設定・記録", "📋 ログ閲覧"])
 
 # --- 1. ハウス設定・記録タブ ---
 with tab_input:
     st.subheader("⚙️ ハウス設定変更")
     
-    with st.form("house_setting_form", clear_on_submit=True):
-        
-        # 1. 対象ハウス選択（セレクトボックス）
-        greenhouse_name = st.selectbox(
-            "📍 対象ハウス", 
-            ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27"]
-        )
-        
-        st.write("---")
-        
-        # 2. ボタンで切替：遮光設定
-        shading = st.segmented_control(
-            "☀️ 遮光カーテン",
-            options=["開け", "閉め", "9-15", "10-14"],
-            default="開け"
-        )
-        
-        # 3. ボタンで切替：ボイラー状態
-        boiler_status = st.segmented_control(
-            "🔥 ボイラー状態",
-            options=["停止中", "稼働中", "自動"],
-            default="停止中"
-        )
-        
-        # 4. ボタンで切替：サイド開閉
-        side_window = st.segmented_control(
-            "🪟 サイド開閉",
-            options=["全開", "半開", "全閉"],
-            default="全閉"
-        )
-        
-        st.write("---")
-        
-        # 温度入力
-        col_b, col_w = st.columns(2)
-        with col_b:
-            boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=20.0, step=0.5)
-        with col_w:
-            window_temp = st.number_input("天側窓設定温度 (°C)", value=22.0, step=0.5)
+    # 群切り替え用サブタブ（D群 / パイプハウス）
+    group_d, group_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
+    
+    # 各群ごとの入力処理を関数化
+    def render_setting_form(group_name, house_list, key_prefix):
+        with st.form(f"setting_form_{key_prefix}", clear_on_submit=True):
             
-        # 送信ボタン
-        submitted = st.form_submit_button("設定をスプレッドシートに保存")
-        
-        if submitted:
-            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # ハウス選択
+            greenhouse_name = st.selectbox(
+                f"📍 対象ハウス ({group_name})", 
+                house_list
+            )
             
-            # スプレッドシートへ書き込み（列順: 温室, サイド開閉, 遮光, ボイラー状態, ボイラー温度, 天側窓温度, 除湿機, 最終入力者, 更新日時）
-            new_row = [
-                greenhouse_name,
-                side_window,
-                shading,
-                boiler_status,
-                boiler_temp,
-                window_temp,
-                "-",
-                "Webアプリ",
-                now_str
-            ]
-            worksheet.append_row(new_row)
-            st.success(f"✅ {greenhouse_name} の設定を更新しました！")
+            st.write("---")
+            
+            # ボタン切替項目
+            shading = st.segmented_control(
+                "☀️ 遮光カーテン",
+                options=["開け", "閉め", "9-15", "10-14"],
+                default="開け"
+            )
+            
+            boiler_status = st.segmented_control(
+                "🔥 ボイラー状態",
+                options=["停止中", "稼働中", "自動"],
+                default="停止中"
+            )
+            
+            side_window = st.segmented_control(
+                "🪟 サイド開閉",
+                options=["全開", "半開", "全閉"],
+                default="全閉"
+            )
+            
+            st.write("---")
+            
+            # 温度入力
+            col_b, col_w = st.columns(2)
+            with col_b:
+                boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=20.0, step=0.5, key=f"b_{key_prefix}")
+            with col_w:
+                window_temp = st.number_input("天側窓設定温度 (°C)", value=22.0, step=0.5, key=f"w_{key_prefix}")
+                
+            submitted = st.form_submit_button("設定をスプレッドシートに保存")
+            
+            if submitted:
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                
+                new_row = [
+                    greenhouse_name,
+                    side_window,
+                    shading,
+                    boiler_status,
+                    boiler_temp,
+                    window_temp,
+                    "-",
+                    "Webアプリ",
+                    now_str
+                ]
+                worksheet.append_row(new_row)
+                st.success(f"✅ {greenhouse_name} の設定を更新しました！")
+
+    # D群タブの中身
+    with group_d:
+        d_houses = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27"]
+        render_setting_form("D群", d_houses, "group_d")
+
+    # パイプハウスタブの中身
+    with group_pipe:
+        # ※パイプハウス側のハウス名リストは実際の名称に変更してください
+        pipe_houses = ["パイプ1号", "パイプ2号", "パイプ3号", "パイプ4号", "パイプ5号"]
+        render_setting_form("パイプハウス", pipe_houses, "group_pipe")
 
 # --- 2. ログ閲覧タブ ---
 with tab_log:
@@ -141,7 +152,6 @@ with tab_log:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
-            # 直近のデータを上に表示
             df_reversed = df.iloc[::-1].reset_index(drop=True)
             
             st.dataframe(
