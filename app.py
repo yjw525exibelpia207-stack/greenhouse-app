@@ -60,43 +60,62 @@ def init_connection():
 try:
     gc = init_connection()
     sh = gc.open("温室管理")
-    worksheet = sh.get_worksheet(0)
     
-    # 既存データの読み込み
-    records = worksheet.get_all_records()
-    df_raw = pd.DataFrame(records) if records else pd.DataFrame()
+    # 全シート（タブ）を取得
+    worksheets = sh.worksheets()
+    sheet_names = [ws.title for ws in worksheets]
+    
+    # パイプハウスタブの検出（「パイプ」が含まれるタブ名を探す）
+    pipe_ws_name = next((name for name in sheet_names if "パイプ" in name), None)
+    
+    # ワークシートオブジェクトとデータの取得
+    ws_main = worksheets[0] # メインシート（D群など）
+    records_main = ws_main.get_all_records()
+    df_main = pd.DataFrame(records_main) if records_main else pd.DataFrame()
+    
+    if pipe_ws_name:
+        ws_pipe = sh.worksheet(pipe_ws_name)
+        records_pipe = ws_pipe.get_all_records()
+        df_pipe = pd.DataFrame(records_pipe) if records_pipe else pd.DataFrame()
+    else:
+        ws_pipe = ws_main
+        df_pipe = pd.DataFrame()
+
 except Exception as e:
     st.error(f"⚠️ 接続エラーが発生しました: {e}")
     st.stop()
 
-# --- 選択中ハウスのステート管理 ---
-if "selected_house" not in st.session_state:
-    st.session_state.selected_house = None
-
-# スプレッドシートから実際に入力されている温室名を取得
-if not df_raw.empty and "温室" in df_raw.columns:
-    all_greenhouses = [str(x) for x in df_raw["温室"].unique() if str(x).strip() != ""]
+# --- 温室一覧の整理 ---
+# D群（F-3を含む）および パイプハウスの定義・自動取得
+if not df_main.empty and "温室" in df_main.columns:
+    d_houses_from_df = [str(x) for x in df_main["温室"].unique() if str(x).strip() != ""]
 else:
-    all_greenhouses = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27", "パイプ1号", "パイプ2号"]
+    d_houses_from_df = []
 
-# D群とパイプハウスに自動振り分け
-d_houses = [h for h in all_greenhouses if "D" in h or "d" in h]
-pipe_houses = [h for h in all_greenhouses if h not in d_houses]
+if not df_pipe.empty and "温室" in df_pipe.columns:
+    pipe_houses_from_df = [str(x) for x in df_pipe["温室"].unique() if str(x).strip() != ""]
+else:
+    pipe_houses_from_df = []
 
-if not d_houses:
-    d_houses = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27"]
-if not pipe_houses:
-    pipe_houses = ["パイプ1号", "パイプ2号", "パイプ3号"]
+# デフォルト温室の定義（データがない場合の初期表示用）
+default_d = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27", "F-3"]
+default_pipe = ["パイプ1号", "パイプ2号", "パイプ3号"]
 
-# 各温室の最新設定を取得する関数
-def get_latest_status(house_list):
-    if df_raw.empty or "温室" not in df_raw.columns:
-        # データがない場合でも温室一覧の枠を作成
+d_houses = list(dict.fromkeys(d_houses_from_df + [h for h in default_d if h not in pipe_houses_from_df]))
+pipe_houses = list(dict.fromkeys(pipe_houses_from_df + [h for h in default_pipe if h not in d_houses]))
+
+# F-3を確実にD群に含める
+if "F-3" not in d_houses and "F-3" not in pipe_houses:
+    d_houses.append("F-3")
+
+# --- 最新設定の取得関数 ---
+def get_latest_status(house_list, df_target):
+    if df_target.empty or "温室" not in df_target.columns:
         return pd.DataFrame({"温室": house_list})
     
     latest_rows = []
     for h in house_list:
-        house_data = df_raw[df_raw["温室"].astype(str) == str(h)]
+        house_data = df_target[df_target["温室"].astype(str) == str(h)]
         if not house_data.empty:
             latest_rows.append(house_data.iloc[-1])
         else:
@@ -106,61 +125,75 @@ def get_latest_status(house_list):
     cols_to_show = [c for c in df_latest.columns if c not in ["最終入力者"]]
     return df_latest[cols_to_show]
 
-# --- メインタブ：現在設定一覧と全ログ ---
+# --- ステート管理 ---
+if "selected_house" not in st.session_state:
+    st.session_state.selected_house = None
+if "selected_group" not in st.session_state:
+    st.session_state.selected_group = None # "d" または "pipe"
+
+# --- UIレイアウト ---
 tab_main, tab_log = st.tabs(["📊 現在の設定一覧", "📋 全履歴ログ"])
 
 # --- 1. 現在の設定一覧タブ ---
 with tab_main:
     
-    # 【パターンA】ハウス未選択：各ハウスの最新設定表（行選択で画面遷移）
     if st.session_state.selected_house is None:
         st.subheader("📍 各ハウスの現在設定")
         st.caption("👇 **表の中の行（ハウス）をタップ** すると設定変更画面に進みます")
         
-        tab_status_d, tab_status_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
+        tab_status_d, tab_status_pipe = st.tabs(["🏢 D群・その他", "🏠 パイプハウス"])
         
-        def render_interactive_table(house_list, key_prefix):
-            df_latest = get_latest_status(house_list)
+        def render_interactive_table(house_list, df_target, group_name):
+            df_latest = get_latest_status(house_list, df_target)
             
-            # st.dataframe の行選択を有効化 (selection_mode="single-row")
             event = st.dataframe(
                 df_latest,
                 use_container_width=True,
                 hide_index=True,
                 on_select="rerun",
                 selection_mode="single-row",
-                key=f"table_{key_prefix}"
+                key=f"table_{group_name}"
             )
             
-            # 行がタップされた場合の処理
             selected_rows = event.selection.get("rows", [])
             if selected_rows:
                 selected_index = selected_rows[0]
                 house_name = str(df_latest.iloc[selected_index]["温室"])
                 st.session_state.selected_house = house_name
+                st.session_state.selected_group = group_name
                 st.rerun()
 
         with tab_status_d:
-            render_interactive_table(d_houses, "d")
+            render_interactive_table(d_houses, df_main, "d")
 
         with tab_status_pipe:
-            render_interactive_table(pipe_houses, "pipe")
+            render_interactive_table(pipe_houses, df_pipe if not df_pipe.empty else df_main, "pipe")
 
-    # 【パターンB】ハウス選択済み：設定変更フォーム
+    # 【設定変更フォーム】
     else:
         house = st.session_state.selected_house
+        group = st.session_state.selected_group
         
+        # 保存先ワークシートとデータフレームの判定
+        if group == "pipe" and pipe_ws_name:
+            target_ws = ws_pipe
+            target_df = df_pipe
+        else:
+            target_ws = ws_main
+            target_df = df_main
+
         # 戻るボタン
         st.markdown('<div class="back-btn">', unsafe_allow_html=True)
         if st.button("⬅️ 設定一覧に戻る", use_container_width=True):
             st.session_state.selected_house = None
+            st.session_state.selected_group = None
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.subheader(f"⚙️ {house} の設定変更")
         
-        # 選択したハウスの最新設定を取得して初期値に反映
-        house_latest = df_raw[df_raw["温室"].astype(str) == str(house)] if not df_raw.empty else pd.DataFrame()
+        # 選択したハウスの最新設定を初期値に反映
+        house_latest = target_df[target_df["温室"].astype(str) == str(house)] if not target_df.empty else pd.DataFrame()
         latest_val = house_latest.iloc[-1] if not house_latest.empty else {}
         
         with st.form("house_detail_form", clear_on_submit=True):
@@ -233,14 +266,15 @@ with tab_main:
                     "更新日時": now_str
                 }
                 
-                if not df_raw.empty:
-                    headers = list(df_raw.columns)
+                if not target_df.empty:
+                    headers = list(target_df.columns)
                     new_row = [row_data.get(col, "-") for col in headers]
                 else:
                     new_row = list(row_data.values())
 
-                worksheet.append_row(new_row)
-                st.session_state.selected_house = None  # 保存後は一覧へ復帰
+                target_ws.append_row(new_row)
+                st.session_state.selected_house = None
+                st.session_state.selected_group = None
                 st.success(f"✅ {house} の設定を更新しました！")
                 st.rerun()
 
@@ -248,31 +282,16 @@ with tab_main:
 with tab_log:
     st.subheader("📋 最新の設定・測定ログ（全履歴）")
     
-    if not df_raw.empty:
-        log_tab_d, log_tab_pipe = st.tabs(["🏢 D群 ログ", "🏠 パイプハウス ログ"])
-        
-        df_reversed = df_raw.iloc[::-1].reset_index(drop=True)
-        
-        with log_tab_d:
-            if "温室" in df_reversed.columns:
-                df_d = df_reversed[df_reversed["温室"].astype(str).isin(d_houses)]
-            else:
-                df_d = df_reversed
-                
-            if not df_d.empty:
-                st.dataframe(df_d, use_container_width=True, hide_index=True)
-            else:
-                st.info("D群のデータがありません。")
-                
-        with log_tab_pipe:
-            if "温室" in df_reversed.columns:
-                df_pipe = df_reversed[df_reversed["温室"].astype(str).isin(pipe_houses)]
-            else:
-                df_pipe = df_reversed
-                
-            if not df_pipe.empty:
-                st.dataframe(df_pipe, use_container_width=True, hide_index=True)
-            else:
-                st.info("パイプハウスのデータがありません。")
-    else:
-        st.info("データがありません。")
+    log_tab_d, log_tab_pipe = st.tabs(["🏢 D群 ログ", "🏠 パイプハウス ログ"])
+    
+    with log_tab_d:
+        if not df_main.empty:
+            st.dataframe(df_main.iloc[::-1].reset_index(drop=True), use_container_width=True, hide_index=True)
+        else:
+            st.info("D群のデータがありません。")
+            
+    with log_tab_pipe:
+        if not df_pipe.empty:
+            st.dataframe(df_pipe.iloc[::-1].reset_index(drop=True), use_container_width=True, hide_index=True)
+        else:
+            st.info("パイプハウスのデータがありません。")
