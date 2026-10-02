@@ -2,9 +2,41 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+import datetime
 
-# ページ基本設定
-st.set_page_config(page_title="温室管理システム", page_icon="🍇", layout="wide")
+# ページ基本設定（スマホ表示を最適化）
+st.set_page_config(
+    page_title="温室管理",
+    page_icon="🍇",
+    layout="centered",  # スマホで見やすい中央寄せ
+    initial_sidebar_state="collapsed"
+)
+
+# カスタムCSS（AppSheet風のUIデザイン適用）
+st.markdown("""
+<style>
+    /* 全体の余白調整 */
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 3rem;
+        max-width: 500px;
+    }
+    /* ボタンのアプリ風デザイン */
+    .stButton > button {
+        width: 100%;
+        border-radius: 12px;
+        height: 3em;
+        background-color: #2e7d32;
+        color: white;
+        font-weight: bold;
+        border: none;
+    }
+    /* カード風コンテナ */
+    div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] {
+        border-radius: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # Googleスプレッドシートへの接続設定
 @st.cache_resource
@@ -25,67 +57,61 @@ def init_connection():
 
 try:
     gc = init_connection()
-    # スプレッドシート名「温室管理」を開く
     sh = gc.open("温室管理")
-    # 1枚目のシートを取得
     worksheet = sh.get_worksheet(0)
-    st.sidebar.success("✅ スプレッドシート接続完了")
 except Exception as e:
-    st.sidebar.error(f"⚠️ 接続エラー: {e}")
+    st.error(f"⚠️ 接続エラーが発生しました: {e}")
     st.stop()
 
-# タイトル
-st.title("🍇 温室温度管理システム")
-st.caption("スプレッドシートリアルタイム連動")
+# --- AppSheet風タブナビゲーション ---
+tab_input, tab_log = st.tabs(["📝 温度入力", "📋 ログ閲覧"])
 
-# --- 1. 温度データ書き込みフォーム ---
-st.subheader("🌡️ 温度データの記録")
-
-with st.form("temp_form"):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        boiler_temp = st.number_input("ボイラー温度 (°C)", value=20.0, step=0.5)
-    with col2:
-        window_temp = st.number_input("天側窓温度 (°C)", value=22.0, step=0.5)
-    with col3:
-        greenhouse_name = st.selectbox("対象温室", ["1号温室 (ブドウ)", "2号温室 (ブドウ)", "3号温室 (育苗)"])
+# --- 1. 温度入力タブ ---
+with tab_input:
+    st.subheader("🌡️ 測定値の記録")
     
-    submitted = st.form_submit_button("スプレッドシートに保存")
-    
-    if submitted:
-        temp_diff = window_temp - boiler_temp
-        status = "⚠️ 異常 (<5°C)" if temp_diff < 5.0 else "正常"
-        import datetime
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        
-        # 新しい行として追加
-        new_row = [now_str, greenhouse_name, boiler_temp, window_temp, round(temp_diff, 1), status]
-        worksheet.append_row(new_row)
-        st.success("スプレッドシートに記録を保存しました！")
-
-st.divider()
-
-# --- 2. 過去ログ表示 ---
-st.subheader("📋 測定ログ一覧 (スプレッドシートより取得)")
-
-# スプレッドシートからデータ取得
-try:
-    data = worksheet.get_all_records()
-    if data:
-        log_data = pd.DataFrame(data)
-
-        def style_temp_rows(row):
-            if "異常" in str(row.get("判定", "")):
-                return ['background-color: #ffe6e6; color: #990000; font-weight: bold'] * len(row)
-            else:
-                return ['background-color: #f0fff0; color: #006600'] * len(row)
-
-        st.dataframe(
-            log_data.style.apply(style_temp_rows, axis=1),
-            use_container_width=True,
-            hide_index=True
+    with st.form("temp_form", clear_on_submit=True):
+        # 温室選択
+        greenhouse_name = st.selectbox(
+            "対象温室", 
+            ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27"]
         )
-    else:
-        st.info("データがまだありません。上のフォームから登録してください。")
-except Exception as e:
-    st.warning("シートの1行目にヘッダー（日時, 温室名, ボイラー温度, 天側窓温度, 温度差, 判定）が入っているか確認してください。")
+        
+        col_b, col_w = st.columns(2)
+        with col_b:
+            boiler_temp = st.number_input("ボイラー温度 (°C)", value=20.0, step=0.5)
+        with col_w:
+            window_temp = st.number_input("天側窓温度 (°C)", value=22.0, step=0.5)
+            
+        submitted = st.form_submit_button("保存する")
+        
+        if submitted:
+            temp_diff = window_temp - boiler_temp
+            status = "⚠️ 異常 (<5°C)" if temp_diff < 5.0 else "正常"
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            
+            # スプレッドシート追加（既存列に合わせて設定）
+            new_row = [greenhouse_name, "-", "-", "停止中", boiler_temp, window_temp, "-", "Webユーザー", now_str]
+            worksheet.append_row(new_row)
+            st.success("✅ スプレッドシートへ保存しました！")
+
+# --- 2. ログ閲覧タブ ---
+with tab_log:
+    st.subheader("📋 最新の測定データ")
+    
+    try:
+        data = worksheet.get_all_records()
+        if data:
+            df = pd.DataFrame(data)
+            # アプリっぽく直近のデータを上に表示
+            df_reversed = df.iloc[::-1].reset_index(drop=True)
+            
+            st.dataframe(
+                df_reversed,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.info("データがありません。")
+    except Exception as e:
+        st.warning("データの読み込みに失敗しました。")
