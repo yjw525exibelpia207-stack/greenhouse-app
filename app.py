@@ -4,36 +4,38 @@ import gspread
 from google.oauth2.service_account import Credentials
 import datetime
 
-# ページ基本設定（スマホ表示を最適化）
+# ページ基本設定（スマホ表示最適化）
 st.set_page_config(
     page_title="温室管理",
     page_icon="🍇",
-    layout="centered",  # スマホで見やすい中央寄せ
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# カスタムCSS（AppSheet風のUIデザイン適用）
+# カスタムCSS（ボタン風ラジオボタンとアプリ風デザイン）
 st.markdown("""
 <style>
-    /* 全体の余白調整 */
     .block-container {
-        padding-top: 1.5rem;
+        padding-top: 1rem;
         padding-bottom: 3rem;
         max-width: 500px;
     }
-    /* ボタンのアプリ風デザイン */
-    .stButton > button {
+    /* 保存ボタンのデザイン */
+    div.stButton > button:first-child {
         width: 100%;
         border-radius: 12px;
-        height: 3em;
+        height: 3.2em;
         background-color: #2e7d32;
         color: white;
         font-weight: bold;
+        font-size: 1.1rem;
         border: none;
+        margin-top: 10px;
     }
-    /* カード風コンテナ */
-    div[data-testid="stVerticalBlock"] > div[style*="flex-direction: column;"] {
-        border-radius: 10px;
+    /* ラジオボタンをアプリ風ボタン化 */
+    div[data-testid="stMarkdownContainer"] > p {
+        font-weight: bold;
+        margin-bottom: 0.2rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -64,46 +66,82 @@ except Exception as e:
     st.stop()
 
 # --- AppSheet風タブナビゲーション ---
-tab_input, tab_log = st.tabs(["📝 温度入力", "📋 ログ閲覧"])
+tab_input, tab_log = st.tabs(["📝 ハウス設定・記録", "📋 ログ閲覧"])
 
-# --- 1. 温度入力タブ ---
+# --- 1. ハウス設定・記録タブ ---
 with tab_input:
-    st.subheader("🌡️ 測定値の記録")
+    st.subheader("⚙️ ハウス設定変更")
     
-    with st.form("temp_form", clear_on_submit=True):
-        # 温室選択
+    with st.form("house_setting_form", clear_on_submit=True):
+        
+        # 1. 対象ハウス選択（セレクトボックス）
         greenhouse_name = st.selectbox(
-            "対象温室", 
+            "📍 対象ハウス", 
             ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27"]
         )
         
+        st.write("---")
+        
+        # 2. ボタンで切替：遮光設定
+        shading = st.segmented_control(
+            "☀️ 遮光カーテン",
+            options=["開け", "閉め", "9-15", "10-14"],
+            default="開け"
+        )
+        
+        # 3. ボタンで切替：ボイラー状態
+        boiler_status = st.segmented_control(
+            "🔥 ボイラー状態",
+            options=["停止中", "稼働中", "自動"],
+            default="停止中"
+        )
+        
+        # 4. ボタンで切替：サイド開閉
+        side_window = st.segmented_control(
+            "🪟 サイド開閉",
+            options=["全開", "半開", "全閉"],
+            default="全閉"
+        )
+        
+        st.write("---")
+        
+        # 温度入力
         col_b, col_w = st.columns(2)
         with col_b:
-            boiler_temp = st.number_input("ボイラー温度 (°C)", value=20.0, step=0.5)
+            boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=20.0, step=0.5)
         with col_w:
-            window_temp = st.number_input("天側窓温度 (°C)", value=22.0, step=0.5)
+            window_temp = st.number_input("天側窓設定温度 (°C)", value=22.0, step=0.5)
             
-        submitted = st.form_submit_button("保存する")
+        # 送信ボタン
+        submitted = st.form_submit_button("設定をスプレッドシートに保存")
         
         if submitted:
-            temp_diff = window_temp - boiler_temp
-            status = "⚠️ 異常 (<5°C)" if temp_diff < 5.0 else "正常"
-            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
-            # スプレッドシート追加（既存列に合わせて設定）
-            new_row = [greenhouse_name, "-", "-", "停止中", boiler_temp, window_temp, "-", "Webユーザー", now_str]
+            # スプレッドシートへ書き込み（列順: 温室, サイド開閉, 遮光, ボイラー状態, ボイラー温度, 天側窓温度, 除湿機, 最終入力者, 更新日時）
+            new_row = [
+                greenhouse_name,
+                side_window,
+                shading,
+                boiler_status,
+                boiler_temp,
+                window_temp,
+                "-",
+                "Webアプリ",
+                now_str
+            ]
             worksheet.append_row(new_row)
-            st.success("✅ スプレッドシートへ保存しました！")
+            st.success(f"✅ {greenhouse_name} の設定を更新しました！")
 
 # --- 2. ログ閲覧タブ ---
 with tab_log:
-    st.subheader("📋 最新の測定データ")
+    st.subheader("📋 最新の設定・測定ログ")
     
     try:
         data = worksheet.get_all_records()
         if data:
             df = pd.DataFrame(data)
-            # アプリっぽく直近のデータを上に表示
+            # 直近のデータを上に表示
             df_reversed = df.iloc[::-1].reset_index(drop=True)
             
             st.dataframe(
