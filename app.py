@@ -91,22 +91,20 @@ if not pipe_houses:
 # 各温室の最新設定を取得する関数
 def get_latest_status(house_list):
     if df_raw.empty or "温室" not in df_raw.columns:
-        return pd.DataFrame()
+        # データがない場合でも温室一覧の枠を作成
+        return pd.DataFrame({"温室": house_list})
     
-    # 温室ごとに最新の1件（最後の行）を取得
     latest_rows = []
     for h in house_list:
         house_data = df_raw[df_raw["温室"].astype(str) == str(h)]
         if not house_data.empty:
             latest_rows.append(house_data.iloc[-1])
+        else:
+            latest_rows.append({"温室": h})
             
-    if latest_rows:
-        df_latest = pd.DataFrame(latest_rows)
-        # 不要な列（最終入力者など）があれば適宜絞り込み
-        cols_to_show = [c for c in df_latest.columns if c not in ["最終入力者"]]
-        return df_latest[cols_to_show]
-    else:
-        return pd.DataFrame()
+    df_latest = pd.DataFrame(latest_rows)
+    cols_to_show = [c for c in df_latest.columns if c not in ["最終入力者"]]
+    return df_latest[cols_to_show]
 
 # --- メインタブ：現在設定一覧と全ログ ---
 tab_main, tab_log = st.tabs(["📊 現在の設定一覧", "📋 全履歴ログ"])
@@ -114,41 +112,39 @@ tab_main, tab_log = st.tabs(["📊 現在の設定一覧", "📋 全履歴ログ
 # --- 1. 現在の設定一覧タブ ---
 with tab_main:
     
-    # 【パターンA】ハウス未選択：各ハウスの最新設定表 ＋ 設定変更へ進むボタン
+    # 【パターンA】ハウス未選択：各ハウスの最新設定表（行選択で画面遷移）
     if st.session_state.selected_house is None:
         st.subheader("📍 各ハウスの現在設定")
+        st.caption("👇 **表の中の行（ハウス）をタップ** すると設定変更画面に進みます")
         
         tab_status_d, tab_status_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
         
-        def render_status_view(house_list, prefix):
+        def render_interactive_table(house_list, key_prefix):
             df_latest = get_latest_status(house_list)
             
-            if not df_latest.empty:
-                st.dataframe(
-                    df_latest,
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("最新データがありません。")
-                
-            st.write("---")
-            st.markdown("👇 **設定を変更したいハウスを選択してください**")
+            # st.dataframe の行選択を有効化 (selection_mode="single-row")
+            event = st.dataframe(
+                df_latest,
+                use_container_width=True,
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key=f"table_{key_prefix}"
+            )
             
-            # ハウス選択ボタン一覧
-            cols = st.columns(2)
-            for idx, house in enumerate(house_list):
-                col = cols[idx % 2]
-                with col:
-                    if st.button(f"⚙️ {house} の設定変更", key=f"select_{prefix}_{house}", use_container_width=True):
-                        st.session_state.selected_house = house
-                        st.rerun()
+            # 行がタップされた場合の処理
+            selected_rows = event.selection.get("rows", [])
+            if selected_rows:
+                selected_index = selected_rows[0]
+                house_name = str(df_latest.iloc[selected_index]["温室"])
+                st.session_state.selected_house = house_name
+                st.rerun()
 
         with tab_status_d:
-            render_status_view(d_houses, "d")
+            render_interactive_table(d_houses, "d")
 
         with tab_status_pipe:
-            render_status_view(pipe_houses, "pipe")
+            render_interactive_table(pipe_houses, "pipe")
 
     # 【パターンB】ハウス選択済み：設定変更フォーム
     else:
@@ -161,7 +157,7 @@ with tab_main:
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         
-        st.subheader(f"⚙️️ {house} の設定変更")
+        st.subheader(f"⚙️ {house} の設定変更")
         
         # 選択したハウスの最新設定を取得して初期値に反映
         house_latest = df_raw[df_raw["温室"].astype(str) == str(house)] if not df_raw.empty else pd.DataFrame()
@@ -169,7 +165,6 @@ with tab_main:
         
         with st.form("house_detail_form", clear_on_submit=True):
             
-            # 設定項目のボタン切替（最新設定があればそれを初期選択）
             curr_side = str(latest_val.get("サイド開閉", "全閉"))
             side_window = st.segmented_control(
                 "🪟 サイド開閉",
@@ -193,7 +188,6 @@ with tab_main:
             
             st.write("---")
             
-            # 各種温度設定（最新値が数値なら初期値にセット）
             def safe_float(val, default):
                 try: return float(val)
                 except: return default
@@ -246,7 +240,9 @@ with tab_main:
                     new_row = list(row_data.values())
 
                 worksheet.append_row(new_row)
+                st.session_state.selected_house = None  # 保存後は一覧へ復帰
                 st.success(f"✅ {house} の設定を更新しました！")
+                st.rerun()
 
 # --- 2. ログ閲覧タブ ---
 with tab_log:
