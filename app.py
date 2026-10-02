@@ -12,7 +12,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# カスタムCSS（スマホ最適化デザイン）
+# カスタムCSS（スマホ・AppSheet風UI）
 st.markdown("""
 <style>
     .block-container {
@@ -20,20 +20,25 @@ st.markdown("""
         padding-bottom: 3rem;
         max-width: 500px;
     }
-    div.stButton > button:first-child {
-        width: 100%;
-        border-radius: 12px;
-        height: 3.2em;
-        background-color: #2e7d32;
-        color: white;
+    /* アプリ風メインボタン */
+    div.stButton > button {
+        border-radius: 10px;
         font-weight: bold;
-        font-size: 1.1rem;
-        border: none;
+    }
+    /* 保存ボタン */
+    .save-btn > button {
+        width: 100%;
+        height: 3.2em;
+        background-color: #2e7d32 !important;
+        color: white !important;
+        font-size: 1.1rem !important;
+        border: none !important;
         margin-top: 15px;
     }
-    div[data-testid="stMarkdownContainer"] > p {
-        font-weight: bold;
-        margin-bottom: 0.2rem;
+    /* 戻るボタン */
+    .back-btn > button {
+        background-color: #666666 !important;
+        color: white !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -67,8 +72,9 @@ except Exception as e:
     st.error(f"⚠️ 接続エラーが発生しました: {e}")
     st.stop()
 
-# --- メインタブ：入力フォームとログ ---
-tab_input, tab_log = st.tabs(["📝 ハウス設定・記録", "📋 ログ閲覧"])
+# --- 選択中ハウスのステート管理 ---
+if "selected_house" not in st.session_state:
+    st.session_state.selected_house = None
 
 # スプレッドシートから実際に入力されている温室名を取得
 if not df_raw.empty and "温室" in df_raw.columns:
@@ -76,35 +82,59 @@ if not df_raw.empty and "温室" in df_raw.columns:
 else:
     all_greenhouses = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27", "パイプ1号", "パイプ2号"]
 
-# D群とパイプハウスに振り分け（「D」が含まれるかどうか）
+# D群とパイプハウスに自動振り分け
 d_houses = [h for h in all_greenhouses if "D" in h or "d" in h]
 pipe_houses = [h for h in all_greenhouses if h not in d_houses]
 
 if not d_houses:
-    d_houses = all_greenhouses
+    d_houses = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27"]
 if not pipe_houses:
-    pipe_houses = ["パイプハウス1", "パイプハウス2"]
+    pipe_houses = ["パイプ1号", "パイプ2号", "パイプ3号"]
 
+# --- メインタブ：入力/選択とログ ---
+tab_main, tab_log = st.tabs(["🏡 ハウス選択・設定", "📋 ログ閲覧"])
 
-# --- 1. ハウス設定・記録タブ ---
-with tab_input:
-    st.subheader("⚙️ ハウス設定変更")
-
-    # 群切り替え用サブタブ
-    group_d, group_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
+# --- 1. ハウス選択・設定タブ ---
+with tab_main:
     
-    def render_setting_form(group_name, house_list, key_prefix):
-        with st.form(f"setting_form_{key_prefix}", clear_on_submit=True):
+    # 【パターンA】ハウスが未選択の場合：一覧ボタン画面を表示
+    if st.session_state.selected_house is None:
+        st.subheader("📍 操作するハウスを選択してください")
+        
+        tab_list_d, tab_list_pipe = st.tabs(["🏢 D群", "🏠 パイプハウス"])
+        
+        # ハウス一覧をグリッド状の押しやすい大ボタンで表示する関数
+        def render_house_grid(house_list, prefix):
+            cols = st.columns(2)  # 2列並びのボタン
+            for idx, house in enumerate(house_list):
+                col = cols[idx % 2]
+                with col:
+                    if st.button(f"🏠 {house}", key=f"btn_{prefix}_{house}", use_container_width=True):
+                        st.session_state.selected_house = house
+                        st.rerun()
+
+        with tab_list_d:
+            render_house_grid(d_houses, "d")
+
+        with tab_list_pipe:
+            render_house_grid(pipe_houses, "pipe")
+
+    # 【パターンB】ハウスが選択されている場合：設定画面を表示
+    else:
+        house = st.session_state.selected_house
+        
+        # 戻るボタン
+        st.markdown('<div class="back-btn">', unsafe_allow_html=True)
+        if st.button("⬅️ ハウス一覧に戻る", use_container_width=True):
+            st.session_state.selected_house = None
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.subheader(f"⚙️ {house} の設定変更")
+        
+        with st.form("house_detail_form", clear_on_submit=True):
             
-            # 1. 実際の温室名から選択
-            greenhouse_name = st.selectbox(
-                f"📍 対象ハウス ({group_name})", 
-                house_list
-            )
-            
-            st.write("---")
-            
-            # 2. 設定項目のボタン切替
+            # 設定項目のボタン切替
             side_window = st.segmented_control(
                 "🪟 サイド開閉",
                 options=["全開", "半開", "全閉", "-"],
@@ -125,33 +155,33 @@ with tab_input:
             
             st.write("---")
             
-            # 3. 各種温度設定（数値入力）
+            # 各種温度設定（数値入力）
             col1, col2 = st.columns(2)
             with col1:
-                boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=15.0, step=0.5, key=f"b_{key_prefix}")
+                boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=15.0, step=0.5)
             with col2:
-                window_temp = st.number_input("天側窓設定温度 (°C)", value=20.0, step=0.5, key=f"w_{key_prefix}")
+                window_temp = st.number_input("天側窓設定温度 (°C)", value=20.0, step=0.5)
                 
             col3, col4 = st.columns(2)
             with col3:
-                upper_window_temp = st.number_input("上段開閉温度 (°C)", value=22.0, step=0.5, key=f"uw_{key_prefix}")
+                upper_window_temp = st.number_input("上段開閉温度 (°C)", value=22.0, step=0.5)
             with col4:
                 dehumidifier = st.segmented_control(
                     "💧 除湿機",
                     options=["稼働", "停止", "-"],
-                    default="-",
-                    key=f"dh_{key_prefix}"
+                    default="-"
                 )
             
-            # 送信ボタン
-            submitted = st.form_submit_button("設定をスプレッドシートに保存")
+            # 保存ボタン
+            st.markdown('<div class="save-btn">', unsafe_allow_html=True)
+            submitted = st.form_submit_button(f"【{house}】の設定を保存")
+            st.markdown('</div>', unsafe_allow_html=True)
             
             if submitted:
                 now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # スプレッドシートの1行目の列名に合わせて dictionary を作成
                 row_data = {
-                    "温室": greenhouse_name,
+                    "温室": house,
                     "サイド開閉": side_window,
                     "遮光": shading,
                     "ボイラー状態": boiler_status,
@@ -163,7 +193,6 @@ with tab_input:
                     "更新日時": now_str
                 }
                 
-                # スプレッドシートの実際のヘッダー列順に合わせて並べ替えて追加
                 if not df_raw.empty:
                     headers = list(df_raw.columns)
                     new_row = [row_data.get(col, "-") for col in headers]
@@ -171,28 +200,17 @@ with tab_input:
                     new_row = list(row_data.values())
 
                 worksheet.append_row(new_row)
-                st.success(f"✅ {greenhouse_name} の設定を更新しました！")
-
-    # D群タブ
-    with group_d:
-        render_setting_form("D群", d_houses, "group_d")
-
-    # パイプハウスタブ
-    with group_pipe:
-        render_setting_form("パイプハウス", pipe_houses, "group_pipe")
+                st.success(f"✅ {house} の設定を更新しました！")
 
 # --- 2. ログ閲覧タブ ---
 with tab_log:
     st.subheader("📋 最新の設定・測定ログ")
     
     if not df_raw.empty:
-        # ログ切り替え用サブタブ（D群 / パイプハウス）
         log_tab_d, log_tab_pipe = st.tabs(["🏢 D群 ログ", "🏠 パイプハウス ログ"])
         
-        # ログを最新順にソート
         df_reversed = df_raw.iloc[::-1].reset_index(drop=True)
         
-        # D群ログ表示処理
         with log_tab_d:
             if "温室" in df_reversed.columns:
                 df_d = df_reversed[df_reversed["温室"].astype(str).isin(d_houses)]
@@ -204,7 +222,6 @@ with tab_log:
             else:
                 st.info("D群のデータがありません。")
                 
-        # パイプハウスログ表示処理
         with log_tab_pipe:
             if "温室" in df_reversed.columns:
                 df_pipe = df_reversed[df_reversed["温室"].astype(str).isin(pipe_houses)]
