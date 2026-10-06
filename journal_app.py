@@ -164,20 +164,39 @@ if st.session_state.selected_date is None:
 
 # --- B. 作業日誌入力フォーム ---
 else:
-    target_date = st.session_state.selected_date
+    target_date_str = st.session_state.selected_date
+    current_dt = datetime.datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
-    st.markdown('<div class="back-btn">', unsafe_allow_html=True)
-    if st.button("⬅️ カレンダーに戻る", use_container_width=True):
-        st.session_state.selected_date = None
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    # ナビゲーションボタン（◀ 前の日 / ⬅️ カレンダーに戻る / 次の日 ▶）
+    col_day_prev, col_back, col_day_next = st.columns([1, 2, 1])
+    
+    with col_day_prev:
+        if st.button("◀ 前の日", use_container_width=True):
+            prev_dt = current_dt - datetime.timedelta(days=1)
+            st.session_state.selected_date = prev_dt.strftime("%Y-%m-%d")
+            st.session_state.current_year_month = (prev_dt.year, prev_dt.month)
+            st.rerun()
 
-    st.subheader(f"📅 {target_date} の作業日誌")
+    with col_back:
+        st.markdown('<div class="back-btn">', unsafe_allow_html=True)
+        if st.button("⬅️ カレンダー", use_container_width=True):
+            st.session_state.selected_date = None
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col_day_next:
+        if st.button("次の日 ▶", use_container_width=True):
+            next_dt = current_dt + datetime.timedelta(days=1)
+            st.session_state.selected_date = next_dt.strftime("%Y-%m-%d")
+            st.session_state.current_year_month = (next_dt.year, next_dt.month)
+            st.rerun()
+
+    st.subheader(f"📅 {target_date_str} の作業日誌")
 
     # 既存データの取得
     existing_log = ""
     if not df_raw.empty and "日付" in df_raw.columns:
-        date_matched = df_raw[df_raw["日付"].astype(str) == target_date]
+        date_matched = df_raw[df_raw["日付"].astype(str) == target_date_str]
         if not date_matched.empty:
             existing_log = str(date_matched.iloc[-1].get("作業内容", ""))
 
@@ -195,10 +214,10 @@ else:
 
         if submitted:
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            new_row = [target_date, work_detail, now_str]
+            new_row = [target_date_str, work_detail, now_str]
 
             worksheet.append_row(new_row)
             
-            st.success(f"✅ {target_date} の作業日誌を保存しました！")
+            st.success(f"✅ {target_date_str} の作業日誌を保存しました！")
             st.session_state.selected_date = None
             st.rerun()
