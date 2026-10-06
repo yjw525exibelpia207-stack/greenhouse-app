@@ -13,19 +13,65 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS（スマホ表示・ボタンデザイン・土日文字色指定）
+# Custom CSS（スマホでも強制的に横7列に配置する設定）
 st.markdown("""
 <style>
+    /* 全体コンテナの幅調整 */
     .block-container {
         padding-top: 1rem;
         padding-bottom: 3rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
         max-width: 500px;
     }
-    div.stButton > button {
-        border-radius: 8px;
-        font-weight: bold;
-        padding: 0.2rem 0.1rem;
+    
+    /* スマホ画面でも7列を縦落ちさせず横に並べる */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 2px !important;
     }
+    
+    /* 7列の各カラム幅を均等化 */
+    div[data-testid="stHorizontalBlock"] > div {
+        width: 14.28% !important;
+        min-width: 0px !important;
+        flex: 1 1 14.28% !important;
+    }
+
+    /* ボタンの共通デザイン（スマホで押しやすくコンパクトに） */
+    div.stButton > button {
+        border-radius: 6px;
+        font-weight: bold;
+        padding: 4px 0px !important;
+        width: 100% !important;
+        min-height: 42px !important;
+        font-size: 0.85rem !important;
+        line-height: 1.2 !important;
+    }
+    
+    /* 土曜（6列目）のボタン文字色を青に固定 */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(6) button p {
+        color: #2196f3 !important;
+    }
+    
+    /* 日曜（7列目）のボタン文字色を赤に固定 */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(7) button p {
+        color: #f44336 !important;
+    }
+
+    /* 曜日の文字装飾 */
+    .weekday-header {
+        text-align: center;
+        font-weight: bold;
+        font-size: 0.85rem;
+        padding-bottom: 4px;
+    }
+    .sat-header { color: #2196f3 !important; }
+    .sun-header { color: #f44336 !important; }
+
+    /* 保存・戻るボタン */
     .save-btn > button {
         width: 100%;
         height: 3.2em;
@@ -39,17 +85,6 @@ st.markdown("""
         background-color: #666666 !important;
         color: white !important;
     }
-    /* 土曜（6列目）のボタン文字色を青に指定 */
-    div[data-testid="stHorizontalBlock"] > div:nth-child(6) button p {
-        color: #1976d2 !important;
-    }
-    /* 日曜（7列目）のボタン文字色を赤に指定 */
-    div[data-testid="stHorizontalBlock"] > div:nth-child(7) button p {
-        color: #d32f2f !important;
-    }
-    /* 曜日の文字指定 */
-    .sat-header { color: #1976d2 !important; font-weight: bold; }
-    .sun-header { color: #d32f2f !important; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -127,13 +162,17 @@ if st.session_state.selected_date is None:
     
     # 曜日ヘッダー
     weekdays_html = [
-        "<div>月</div>", "<div>火</div>", "<div>水</div>", 
-        "<div>木</div>", "<div>金</div>", 
-        "<div class='sat-header'>土</div>", "<div class='sun-header'>日</div>"
+        "<div class='weekday-header'>月</div>", 
+        "<div class='weekday-header'>火</div>", 
+        "<div class='weekday-header'>水</div>", 
+        "<div class='weekday-header'>木</div>", 
+        "<div class='weekday-header'>金</div>", 
+        "<div class='weekday-header sat-header'>土</div>", 
+        "<div class='weekday-header sun-header'>日</div>"
     ]
     cols = st.columns(7)
     for idx, day_html in enumerate(weekdays_html):
-        cols[idx].markdown(f"<div style='text-align:center;'>{day_html}</div>", unsafe_allow_html=True)
+        cols[idx].markdown(day_html, unsafe_allow_html=True)
         
     st.write("---")
 
@@ -149,7 +188,6 @@ if st.session_state.selected_date is None:
                 has_log = date_str in logged_dates
                 is_today = (date_str == today_str)
 
-                # 数字のみ表示（入力済みは 📝 マーク付与）
                 label = f"{day}"
                 if has_log:
                     label += "\n📝"
@@ -179,7 +217,7 @@ else:
 
     with col_back:
         st.markdown('<div class="back-btn">', unsafe_allow_html=True)
-        if st.button("⬅️ カレンダー", use_container_width=True):
+        if st.button("⬅️️ カレンダー", use_container_width=True):
             st.session_state.selected_date = None
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
