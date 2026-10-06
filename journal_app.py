@@ -13,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS（スマホで押しやすい大きめボタンやカレンダー・曜日カラー指定）
+# Custom CSS（スマホ表示・ボタンデザイン・土日文字色指定）
 st.markdown("""
 <style>
     .block-container {
@@ -24,6 +24,7 @@ st.markdown("""
     div.stButton > button {
         border-radius: 8px;
         font-weight: bold;
+        padding: 0.2rem 0.1rem;
     }
     .save-btn > button {
         width: 100%;
@@ -38,9 +39,17 @@ st.markdown("""
         background-color: #666666 !important;
         color: white !important;
     }
-    /* 土曜・日曜の色スタイリング */
-    .sat-text { color: #1976d2 !important; font-weight: bold; }
-    .sun-text { color: #d32f2f !important; font-weight: bold; }
+    /* 土曜（6列目）のボタン文字色を青に指定 */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(6) button p {
+        color: #1976d2 !important;
+    }
+    /* 日曜（7列目）のボタン文字色を赤に指定 */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(7) button p {
+        color: #d32f2f !important;
+    }
+    /* 曜日の文字指定 */
+    .sat-header { color: #1976d2 !important; font-weight: bold; }
+    .sun-header { color: #d32f2f !important; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -116,11 +125,11 @@ if st.session_state.selected_date is None:
     # カレンダーグリッド
     cal = calendar.monthcalendar(year, month)
     
-    # 曜日ヘッダー（土曜：青、日曜：赤）
+    # 曜日ヘッダー
     weekdays_html = [
         "<div>月</div>", "<div>火</div>", "<div>水</div>", 
         "<div>木</div>", "<div>金</div>", 
-        "<div class='sat-text'>土</div>", "<div class='sun-text'>日</div>"
+        "<div class='sat-header'>土</div>", "<div class='sun-header'>日</div>"
     ]
     cols = st.columns(7)
     for idx, day_html in enumerate(weekdays_html):
@@ -140,15 +149,8 @@ if st.session_state.selected_date is None:
                 has_log = date_str in logged_dates
                 is_today = (date_str == today_str)
 
-                # 土曜(5)・日曜(6) の判定
-                if idx == 5:
-                    day_display = f"🔵 {day}" if not is_today else f"{day}"
-                elif idx == 6:
-                    day_display = f"🔴 {day}" if not is_today else f"{day}"
-                else:
-                    day_display = f"{day}"
-
-                label = day_display
+                # 数字のみ表示（入力済みは 📝 マーク付与）
+                label = f"{day}"
                 if has_log:
                     label += "\n📝"
                 
@@ -158,7 +160,7 @@ if st.session_state.selected_date is None:
                     st.session_state.selected_date = date_str
                     st.rerun()
 
-    st.caption("※ 🔵＝土曜日 / 🔴＝日曜日 / 📝＝入力済み")
+    st.caption("※ 📝＝入力済み")
 
 # --- B. 作業日誌入力フォーム ---
 else:
