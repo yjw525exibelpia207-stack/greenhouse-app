@@ -16,9 +16,9 @@ st.set_page_config(
 # Custom CSS（スマホでも強制的に横7列に配置する設定）
 st.markdown("""
 <style>
-    /* 全体コンテナの幅調整 */
+    /* 全体コンテナの幅と上部余白調整（上部が切れるのを防ぐためにpadding-topを増加） */
     .block-container {
-        padding-top: 1rem;
+        padding-top: 3.5rem;
         padding-bottom: 3rem;
         padding-left: 0.5rem;
         padding-right: 0.5rem;
@@ -115,7 +115,7 @@ try:
     records = worksheet.get_all_records()
     df_raw = pd.DataFrame(records) if records else pd.DataFrame(columns=["日付", "作業内容", "更新日時"])
 except Exception as e:
-    st.error(f"⚠️ スプレッドシート「{SPREADSHEET_NAME}」の接続エラー: {e}")
+    st.error(f"⚠️️ スプレッドシート「{SPREADSHEET_NAME}」の接続エラー: {e}")
     st.stop()
 
 # ステート管理
@@ -152,10 +152,14 @@ if st.session_state.selected_date is None:
 
     st.write("")
 
-    # 登録済みの日付リスト
+    # 入力内容が存在する（空欄でない）日付のみ抽出
     logged_dates = set()
-    if not df_raw.empty and "日付" in df_raw.columns:
-        logged_dates = set(df_raw["日付"].astype(str).tolist())
+    if not df_raw.empty and "日付" in df_raw.columns and "作業内容" in df_raw.columns:
+        # 最新の入力行を優先し、作業内容が空文字でない日付を取得
+        for date, group in df_raw.groupby("日付"):
+            last_content = str(group.iloc[-1]["作業内容"]).strip()
+            if last_content:
+                logged_dates.add(str(date))
 
     # カレンダーグリッド
     cal = calendar.monthcalendar(year, month)
@@ -217,7 +221,7 @@ else:
 
     with col_back:
         st.markdown('<div class="back-btn">', unsafe_allow_html=True)
-        if st.button("⬅️️ カレンダー", use_container_width=True):
+        if st.button("⬅ カレンダー", use_container_width=True):
             st.session_state.selected_date = None
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
