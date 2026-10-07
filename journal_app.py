@@ -51,14 +51,14 @@ st.markdown("""
         line-height: 1.2 !important;
     }
     
-    /* 土曜（6列目）の文字色 */
-    div[data-testid="stHorizontalBlock"] > div:nth-child(6) button p {
-        color: #2196f3 !important;
+    /* 日曜（1列目）の文字色：赤 */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(1) button p {
+        color: #f44336 !important;
     }
     
-    /* 日曜（7列目）の文字色 */
+    /* 土曜（7列目）の文字色：青 */
     div[data-testid="stHorizontalBlock"] > div:nth-child(7) button p {
-        color: #f44336 !important;
+        color: #2196f3 !important;
     }
 
     /* 曜日ヘッダー */
@@ -147,7 +147,7 @@ def init_connection():
 
 SPREADSHEET_NAME = "作業日誌"
 
-# スプレッドシートから最新データを取得（毎回最新を取得するよう設定）
+# スプレッドシートから最新データを取得
 def load_data():
     try:
         gc = init_connection()
@@ -217,13 +217,13 @@ if st.session_state.mode == "view":
     cal = calendar.monthcalendar(year, month)
     
     weekdays_html = [
-        "<div class='weekday-header'>日</div>", 
+        "<div class='weekday-header sun-header'>日</div>", 
         "<div class='weekday-header'>月</div>", 
         "<div class='weekday-header'>火</div>", 
         "<div class='weekday-header'>水</div>", 
         "<div class='weekday-header'>木</div>", 
-        "<div class='weekday-header sat-header'>金</div>", 
-        "<div class='weekday-header sun-header'>土</div>"
+        "<div class='weekday-header'>金</div>", 
+        "<div class='weekday-header sat-header'>土</div>"
     ]
     cols = st.columns(7)
     for idx, day_html in enumerate(weekdays_html):
