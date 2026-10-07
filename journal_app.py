@@ -72,33 +72,34 @@ st.markdown("""
     .sat-header { color: #2196f3 !important; }
     .sun-header { color: #f44336 !important; }
 
-    /* プレビュー表示エリアのスタイル */
+    /* プレビュー表示エリアのスタイル（背景：白、文字：黒） */
     .preview-box {
-        background-color: #1e1e1e;
-        border: 1px solid #333333;
+        background-color: #ffffff;
+        border: 1px solid #cccccc;
         border-radius: 12px;
         padding: 16px;
         margin-top: 15px;
         margin-bottom: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     }
     .preview-date {
         font-size: 1.2rem;
         font-weight: bold;
-        color: #ffffff;
+        color: #111111;
         margin-bottom: 8px;
-        border-bottom: 1px solid #444444;
+        border-bottom: 1px solid #eeeeee;
         padding-bottom: 6px;
     }
     .preview-content {
         font-size: 0.95rem;
-        color: #dddddd;
+        color: #222222;
         white-space: pre-wrap;
         line-height: 1.5;
         min-height: 60px;
     }
     .preview-empty {
         font-size: 0.9rem;
-        color: #777777;
+        color: #888888;
         font-style: italic;
     }
 
@@ -263,7 +264,7 @@ if st.session_state.mode == "view":
 
     st.markdown("---")
     
-    # プレビューカード表示
+    # プレビューカード表示（背景：白、文字：黒）
     preview_html = f"""
     <div class="preview-box">
         <div class="preview-date">📅 {focused_date_str}</div>
@@ -333,10 +334,3 @@ else:
 
         if submitted:
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            new_row = [target_date_str, work_detail, now_str]
-
-            worksheet.append_row(new_row)
-            
-            st.success(f"✅ {target_date_str} の作業日誌を保存しました！")
-            st.session_state.mode = "view"
-            st.rerun()
