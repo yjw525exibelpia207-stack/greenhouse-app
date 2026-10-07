@@ -147,7 +147,7 @@ def init_connection():
 
 SPREADSHEET_NAME = "作業日誌"
 
-# スプレッドシートから最新データを取得
+# スプレッドシートから最新データを取得（毎回最新を取得するよう設定）
 def load_data():
     try:
         gc = init_connection()
@@ -170,7 +170,7 @@ worksheet, df_raw = load_data()
 
 # ステート管理
 if "mode" not in st.session_state:
-    st.session_state.mode = "view"  # "view": カレンダー&プレビュー画面, "edit": 入力フォーム画面
+    st.session_state.mode = "view"
 if "focused_date" not in st.session_state:
     st.session_state.focused_date = datetime.date.today().strftime("%Y-%m-%d")
 if "current_year_month" not in st.session_state:
@@ -245,13 +245,11 @@ if st.session_state.mode == "view":
 
                 label = f"{day}"
                 if has_log:
-                    label += "\n●"  # 入力済みの印
+                    label += "\n●"
 
-                # 選択中の日付は Primary ボタンで強調
                 btn_type = "primary" if is_focused else "secondary"
 
                 if cols[idx].button(label, key=f"btn_{date_str}", type=btn_type, use_container_width=True):
-                    # すでに選択中の日をもう一度タップした場合は編集画面を開く
                     if st.session_state.focused_date == date_str:
                         st.session_state.mode = "edit"
                     else:
@@ -264,7 +262,6 @@ if st.session_state.mode == "view":
 
     st.markdown("---")
     
-    # プレビューカード表示（背景：白、文字：黒）
     preview_html = f"""
     <div class="preview-box">
         <div class="preview-date">📅 {focused_date_str}</div>
@@ -275,7 +272,6 @@ if st.session_state.mode == "view":
     """
     st.markdown(preview_html, unsafe_allow_html=True)
 
-    # 編集画面へ移るボタン
     st.markdown('<div class="edit-btn">', unsafe_allow_html=True)
     if st.button("✏️ この日の作業内容を編集・入力する", use_container_width=True):
         st.session_state.mode = "edit"
@@ -287,7 +283,6 @@ else:
     target_date_str = st.session_state.focused_date
     current_dt = datetime.datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
-    # ナビゲーションボタン（◀ 前の日 / ⬅️ カレンダーに戻る / 次の日 ▶）
     col_day_prev, col_back, col_day_next = st.columns([1, 2, 1])
     
     with col_day_prev:
@@ -313,7 +308,6 @@ else:
 
     st.subheader(f"📅 {target_date_str} の作業日誌")
 
-    # 既存データの取得
     existing_log = ""
     if not df_raw.empty and "日付" in df_raw.columns:
         date_matched = df_raw[df_raw["日付"] == target_date_str]
@@ -334,3 +328,12 @@ else:
 
         if submitted:
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            new_row = [target_date_str, work_detail, now_str]
+
+            # スプレッドシートに追加書き込み
+            worksheet.append_row(new_row)
+            
+            # キャッシュをリセットして画面遷移
+            st.cache_data.clear()
+            st.session_state.mode = "view"
+            st.rerun()
