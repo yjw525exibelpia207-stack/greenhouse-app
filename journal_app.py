@@ -81,6 +81,7 @@ st.markdown("""
         margin-top: 15px;
         margin-bottom: 15px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        text-align: left !important;
     }
     .preview-date {
         font-size: 1.2rem;
@@ -89,6 +90,7 @@ st.markdown("""
         margin-bottom: 8px;
         border-bottom: 1px solid #eeeeee;
         padding-bottom: 6px;
+        text-align: left !important;
     }
     .preview-content {
         font-size: 0.95rem;
@@ -96,6 +98,7 @@ st.markdown("""
         white-space: pre-wrap;
         line-height: 1.5;
         min-height: 60px;
+        text-align: left !important;
     }
     .preview-empty {
         font-size: 0.9rem;
@@ -262,14 +265,9 @@ if st.session_state.mode == "view":
 
     st.markdown("---")
     
-    preview_html = f"""
-    <div class="preview-box">
-        <div class="preview-date">📅 {focused_date_str}</div>
-        <div class="preview-content">
-            {focused_content if focused_content else '<span class="preview-empty">（作業内容の入力はありません）</span>'}
-        </div>
-    </div>
-    """
+    display_text = focused_content if focused_content else '<span class="preview-empty">（作業内容の入力はありません）</span>'
+    
+    preview_html = f'<div class="preview-box"><div class="preview-date">📅 {focused_date_str}</div><div class="preview-content">{display_text}</div></div>'
     st.markdown(preview_html, unsafe_allow_html=True)
 
     st.markdown('<div class="edit-btn">', unsafe_allow_html=True)
