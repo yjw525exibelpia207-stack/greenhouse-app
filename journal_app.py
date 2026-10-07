@@ -13,19 +13,19 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS（スマホでも強制的に横7列に配置する設定）
+# Custom CSS（スマホ表示・プレビューカードのスタイリング）
 st.markdown("""
 <style>
-    /* 全体コンテナの幅と上部余白調整（上部が切れるのを防ぐためにpadding-topを増加） */
+    /* 全体コンテナの幅と上部余白調整 */
     .block-container {
-        padding-top: 3.5rem;
+        padding-top: 2.5rem;
         padding-bottom: 3rem;
         padding-left: 0.5rem;
         padding-right: 0.5rem;
         max-width: 500px;
     }
     
-    /* スマホ画面でも7列を縦落ちさせず横に並べる */
+    /* スマホ画面でも7列を横に並べる */
     div[data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
@@ -40,38 +40,77 @@ st.markdown("""
         flex: 1 1 14.28% !important;
     }
 
-    /* ボタンの共通デザイン（スマホで押しやすくコンパクトに） */
+    /* カレンダーボタンのデザイン */
     div.stButton > button {
-        border-radius: 6px;
+        border-radius: 8px;
         font-weight: bold;
-        padding: 4px 0px !important;
+        padding: 2px 0px !important;
         width: 100% !important;
-        min-height: 42px !important;
+        min-height: 44px !important;
         font-size: 0.85rem !important;
         line-height: 1.2 !important;
     }
     
-    /* 土曜（6列目）のボタン文字色を青に固定 */
+    /* 土曜（6列目）の文字色 */
     div[data-testid="stHorizontalBlock"] > div:nth-child(6) button p {
         color: #2196f3 !important;
     }
     
-    /* 日曜（7列目）のボタン文字色を赤に固定 */
+    /* 日曜（7列目）の文字色 */
     div[data-testid="stHorizontalBlock"] > div:nth-child(7) button p {
         color: #f44336 !important;
     }
 
-    /* 曜日の文字装飾 */
+    /* 曜日ヘッダー */
     .weekday-header {
         text-align: center;
         font-weight: bold;
         font-size: 0.85rem;
         padding-bottom: 4px;
+        color: #888888;
     }
     .sat-header { color: #2196f3 !important; }
     .sun-header { color: #f44336 !important; }
 
-    /* 保存・戻るボタン */
+    /* プレビュー表示エリアのスタイル */
+    .preview-box {
+        background-color: #1e1e1e;
+        border: 1px solid #333333;
+        border-radius: 12px;
+        padding: 16px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }
+    .preview-date {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #ffffff;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #444444;
+        padding-bottom: 6px;
+    }
+    .preview-content {
+        font-size: 0.95rem;
+        color: #dddddd;
+        white-space: pre-wrap;
+        line-height: 1.5;
+        min-height: 60px;
+    }
+    .preview-empty {
+        font-size: 0.9rem;
+        color: #777777;
+        font-style: italic;
+    }
+
+    /* 保存・編集ボタン */
+    .edit-btn > button {
+        width: 100%;
+        height: 3rem;
+        background-color: #1976d2 !important;
+        color: white !important;
+        font-size: 1rem !important;
+        border-radius: 8px !important;
+    }
     .save-btn > button {
         width: 100%;
         height: 3.2em;
@@ -107,26 +146,38 @@ def init_connection():
 
 SPREADSHEET_NAME = "作業日誌"
 
-try:
-    gc = init_connection()
-    sh = gc.open(SPREADSHEET_NAME)
-    worksheet = sh.get_worksheet(0)
-    
-    records = worksheet.get_all_records()
-    df_raw = pd.DataFrame(records) if records else pd.DataFrame(columns=["日付", "作業内容", "更新日時"])
-except Exception as e:
-    st.error(f"⚠️️ スプレッドシート「{SPREADSHEET_NAME}」の接続エラー: {e}")
-    st.stop()
+# スプレッドシートから最新データを取得
+def load_data():
+    try:
+        gc = init_connection()
+        sh = gc.open(SPREADSHEET_NAME)
+        worksheet = sh.get_worksheet(0)
+        
+        data = worksheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if "日付" in df.columns:
+                df["日付"] = pd.to_datetime(df["日付"], errors="coerce").dt.strftime("%Y-%m-%d")
+            return worksheet, df
+        else:
+            return worksheet, pd.DataFrame(columns=["日付", "作業内容", "更新日時"])
+    except Exception as e:
+        st.error(f"⚠️ スプレッドシート「{SPREADSHEET_NAME}」の接続エラー: {e}")
+        st.stop()
+
+worksheet, df_raw = load_data()
 
 # ステート管理
-if "selected_date" not in st.session_state:
-    st.session_state.selected_date = None
+if "mode" not in st.session_state:
+    st.session_state.mode = "view"  # "view": カレンダー&プレビュー画面, "edit": 入力フォーム画面
+if "focused_date" not in st.session_state:
+    st.session_state.focused_date = datetime.date.today().strftime("%Y-%m-%d")
 if "current_year_month" not in st.session_state:
     today = datetime.date.today()
     st.session_state.current_year_month = (today.year, today.month)
 
-# --- A. カレンダー画面 ---
-if st.session_state.selected_date is None:
+# --- A. カレンダー ＆ プレビュー画面 ---
+if st.session_state.mode == "view":
     year, month = st.session_state.current_year_month
     
     # 月切り替えヘッダー
@@ -152,27 +203,26 @@ if st.session_state.selected_date is None:
 
     st.write("")
 
-    # 入力内容が存在する（空欄でない）日付のみ抽出
-    logged_dates = set()
+    # 日付ごとの作業内容辞書を作成
+    log_map = {}
     if not df_raw.empty and "日付" in df_raw.columns and "作業内容" in df_raw.columns:
-        # 最新の入力行を優先し、作業内容が空文字でない日付を取得
         for date, group in df_raw.groupby("日付"):
-            last_content = str(group.iloc[-1]["作業内容"]).strip()
-            if last_content:
-                logged_dates.add(str(date))
+            if pd.notna(date) and date != "None":
+                content = str(group.iloc[-1]["作業内容"]).strip()
+                if content:
+                    log_map[str(date)] = content
 
-    # カレンダーグリッド
+    # カレンダーグリッド描画
     cal = calendar.monthcalendar(year, month)
     
-    # 曜日ヘッダー
     weekdays_html = [
+        "<div class='weekday-header'>日</div>", 
         "<div class='weekday-header'>月</div>", 
         "<div class='weekday-header'>火</div>", 
         "<div class='weekday-header'>水</div>", 
         "<div class='weekday-header'>木</div>", 
-        "<div class='weekday-header'>金</div>", 
-        "<div class='weekday-header sat-header'>土</div>", 
-        "<div class='weekday-header sun-header'>日</div>"
+        "<div class='weekday-header sat-header'>金</div>", 
+        "<div class='weekday-header sun-header'>土</div>"
     ]
     cols = st.columns(7)
     for idx, day_html in enumerate(weekdays_html):
@@ -189,24 +239,51 @@ if st.session_state.selected_date is None:
                 cols[idx].write("")
             else:
                 date_str = f"{year:04d}-{month:02d}-{day:02d}"
-                has_log = date_str in logged_dates
-                is_today = (date_str == today_str)
+                has_log = date_str in log_map
+                is_focused = (date_str == st.session_state.focused_date)
 
                 label = f"{day}"
                 if has_log:
-                    label += "\n📝"
-                
-                btn_type = "primary" if is_today else "secondary"
+                    label += "\n●"  # 入力済みの印
+
+                # 選択中の日付は Primary ボタンで強調
+                btn_type = "primary" if is_focused else "secondary"
 
                 if cols[idx].button(label, key=f"btn_{date_str}", type=btn_type, use_container_width=True):
-                    st.session_state.selected_date = date_str
+                    # すでに選択中の日をもう一度タップした場合は編集画面を開く
+                    if st.session_state.focused_date == date_str:
+                        st.session_state.mode = "edit"
+                    else:
+                        st.session_state.focused_date = date_str
                     st.rerun()
 
-    st.caption("※ 📝＝入力済み")
+    # --- 下部：選択日付のプレビュー表示エリア ---
+    focused_date_str = st.session_state.focused_date
+    focused_content = log_map.get(focused_date_str, "")
 
-# --- B. 作業日誌入力フォーム ---
+    st.markdown("---")
+    
+    # プレビューカード表示
+    preview_html = f"""
+    <div class="preview-box">
+        <div class="preview-date">📅 {focused_date_str}</div>
+        <div class="preview-content">
+            {focused_content if focused_content else '<span class="preview-empty">（作業内容の入力はありません）</span>'}
+        </div>
+    </div>
+    """
+    st.markdown(preview_html, unsafe_allow_html=True)
+
+    # 編集画面へ移るボタン
+    st.markdown('<div class="edit-btn">', unsafe_allow_html=True)
+    if st.button("✏️ この日の作業内容を編集・入力する", use_container_width=True):
+        st.session_state.mode = "edit"
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# --- B. 作業日誌入力フォーム画面 ---
 else:
-    target_date_str = st.session_state.selected_date
+    target_date_str = st.session_state.focused_date
     current_dt = datetime.datetime.strptime(target_date_str, "%Y-%m-%d").date()
 
     # ナビゲーションボタン（◀ 前の日 / ⬅️ カレンダーに戻る / 次の日 ▶）
@@ -215,21 +292,21 @@ else:
     with col_day_prev:
         if st.button("◀ 前の日", use_container_width=True):
             prev_dt = current_dt - datetime.timedelta(days=1)
-            st.session_state.selected_date = prev_dt.strftime("%Y-%m-%d")
+            st.session_state.focused_date = prev_dt.strftime("%Y-%m-%d")
             st.session_state.current_year_month = (prev_dt.year, prev_dt.month)
             st.rerun()
 
     with col_back:
         st.markdown('<div class="back-btn">', unsafe_allow_html=True)
         if st.button("⬅ カレンダー", use_container_width=True):
-            st.session_state.selected_date = None
+            st.session_state.mode = "view"
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_day_next:
         if st.button("次の日 ▶", use_container_width=True):
             next_dt = current_dt + datetime.timedelta(days=1)
-            st.session_state.selected_date = next_dt.strftime("%Y-%m-%d")
+            st.session_state.focused_date = next_dt.strftime("%Y-%m-%d")
             st.session_state.current_year_month = (next_dt.year, next_dt.month)
             st.rerun()
 
@@ -238,7 +315,7 @@ else:
     # 既存データの取得
     existing_log = ""
     if not df_raw.empty and "日付" in df_raw.columns:
-        date_matched = df_raw[df_raw["日付"].astype(str) == target_date_str]
+        date_matched = df_raw[df_raw["日付"] == target_date_str]
         if not date_matched.empty:
             existing_log = str(date_matched.iloc[-1].get("作業内容", ""))
 
@@ -261,5 +338,5 @@ else:
             worksheet.append_row(new_row)
             
             st.success(f"✅ {target_date_str} の作業日誌を保存しました！")
-            st.session_state.selected_date = None
+            st.session_state.mode = "view"
             st.rerun()
