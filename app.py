@@ -3,26 +3,120 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import datetime
+import calendar
+
+# カレンダーを日曜日始まりに設定
+calendar.setfirstweekday(calendar.SUNDAY)
 
 # ページ基本設定（スマホ表示最適化）
 st.set_page_config(
-    page_title="温室管理",
-    page_icon="🍇",
+    page_title="作業日誌",
+    page_icon="📅",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# カスタムCSS（スマホ・AppSheet風UI）
+# Custom CSS（スマホ表示・プレビューカードのスタイリング）
 st.markdown("""
 <style>
+    /* 全体コンテナの幅と上部余白調整 */
     .block-container {
-        padding-top: 1rem;
+        padding-top: 2.5rem;
         padding-bottom: 3rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
         max-width: 500px;
     }
+    
+    /* スマホ画面でも7列を横に並べる */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 2px !important;
+    }
+    
+    /* 7列の各カラム幅を均等化 */
+    div[data-testid="stHorizontalBlock"] > div {
+        width: 14.28% !important;
+        min-width: 0px !important;
+        flex: 1 1 14.28% !important;
+    }
+
+    /* カレンダーボタンのデザイン */
     div.stButton > button {
-        border-radius: 10px;
+        border-radius: 8px;
         font-weight: bold;
+        padding: 2px 0px !important;
+        width: 100% !important;
+        min-height: 44px !important;
+        font-size: 0.85rem !important;
+        line-height: 1.2 !important;
+    }
+    
+    /* 日曜（1列目）の文字色：赤 */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(1) button p {
+        color: #f44336 !important;
+    }
+    
+    /* 土曜（7列目）の文字色：青 */
+    div[data-testid="stHorizontalBlock"] > div:nth-child(7) button p {
+        color: #2196f3 !important;
+    }
+
+    /* 曜日ヘッダー */
+    .weekday-header {
+        text-align: center;
+        font-weight: bold;
+        font-size: 0.85rem;
+        padding-bottom: 4px;
+        color: #888888;
+    }
+    .sat-header { color: #2196f3 !important; }
+    .sun-header { color: #f44336 !important; }
+
+    /* プレビュー表示エリアのスタイル（背景：白、文字：黒） */
+    .preview-box {
+        background-color: #ffffff;
+        border: 1px solid #cccccc;
+        border-radius: 12px;
+        padding: 16px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        text-align: left !important;
+    }
+    .preview-date {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: #111111;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #eeeeee;
+        padding-bottom: 6px;
+        text-align: left !important;
+    }
+    .preview-content {
+        font-size: 0.95rem;
+        color: #222222;
+        white-space: pre-wrap;
+        line-height: 1.5;
+        min-height: 60px;
+        text-align: left !important;
+    }
+    .preview-empty {
+        font-size: 0.9rem;
+        color: #888888;
+        font-style: italic;
+    }
+
+    /* 保存・編集ボタン */
+    .edit-btn > button {
+        width: 100%;
+        height: 3rem;
+        background-color: #1976d2 !important;
+        color: white !important;
+        font-size: 1rem !important;
+        border-radius: 8px !important;
     }
     .save-btn > button {
         width: 100%;
@@ -57,244 +151,193 @@ def init_connection():
     )
     return gspread.authorize(creds)
 
-try:
-    gc = init_connection()
-    sh = gc.open("温室管理")
-    
-    # 全シート（タブ）を取得
-    worksheets = sh.worksheets()
-    sheet_names = [ws.title for ws in worksheets]
-    
-    # パイプハウスタブの検出（「パイプ」が含まれるタブ名を探す）
-    pipe_ws_name = next((name for name in sheet_names if "パイプ" in name), None)
-    
-    # ワークシートオブジェクトとデータの取得
-    ws_main = worksheets[0] # メインシート（D群など）
-    records_main = ws_main.get_all_records()
-    df_main = pd.DataFrame(records_main) if records_main else pd.DataFrame()
-    
-    if pipe_ws_name:
-        ws_pipe = sh.worksheet(pipe_ws_name)
-        records_pipe = ws_pipe.get_all_records()
-        df_pipe = pd.DataFrame(records_pipe) if records_pipe else pd.DataFrame()
-    else:
-        ws_pipe = ws_main
-        df_pipe = pd.DataFrame()
+SPREADSHEET_NAME = "作業日誌"
 
-except Exception as e:
-    st.error(f"⚠️ 接続エラーが発生しました: {e}")
-    st.stop()
-
-# --- 温室一覧の整理 ---
-if not df_main.empty and "温室" in df_main.columns:
-    d_houses_from_df = [str(x) for x in df_main["温室"].unique() if str(x).strip() != ""]
-else:
-    d_houses_from_df = []
-
-if not df_pipe.empty and "温室" in df_pipe.columns:
-    pipe_houses_from_df = [str(x) for x in df_pipe["温室"].unique() if str(x).strip() != ""]
-else:
-    pipe_houses_from_df = []
-
-# デフォルト温室の定義
-default_d = ["D-7", "D-8", "D-9", "D-15", "D-21", "D-23", "D-24", "D-25", "D-26", "D-27", "F-3"]
-default_pipe = ["パイプ1号", "パイプ2号", "パイプ3号"]
-
-d_houses = list(dict.fromkeys(d_houses_from_df + [h for h in default_d if h not in pipe_houses_from_df]))
-pipe_houses = list(dict.fromkeys(pipe_houses_from_df + [h for h in default_pipe if h not in d_houses]))
-
-# F-3を確実にD群に含める
-if "F-3" not in d_houses and "F-3" not in pipe_houses:
-    d_houses.append("F-3")
-
-# --- 最新設定の取得関数 (エラーの原因箇所を改善) ---
-def get_latest_status(house_list, df_target):
-    if df_target.empty or "温室" not in df_target.columns:
-        return pd.DataFrame({"温室": house_list})
-    
-    latest_rows = []
-    all_cols = list(df_target.columns)
-    
-    for h in house_list:
-        house_data = df_target[df_target["温室"].astype(str) == str(h)]
-        if not house_data.empty:
-            # Seriesではなく辞書（dict）として抽出して追加することで型エラーを防ぐ
-            latest_rows.append(house_data.iloc[-1].to_dict())
+# スプレッドシートから最新データを取得
+def load_data():
+    try:
+        gc = init_connection()
+        sh = gc.open(SPREADSHEET_NAME)
+        worksheet = sh.get_worksheet(0)
+        
+        data = worksheet.get_all_values()
+        if len(data) > 1:
+            df = pd.DataFrame(data[1:], columns=data[0])
+            if "日付" in df.columns:
+                df["日付"] = pd.to_datetime(df["日付"], errors="coerce").dt.strftime("%Y-%m-%d")
+            return worksheet, df
         else:
-            # 未入力ハウス用の空行を作成
-            empty_row = {col: "-" for col in all_cols}
-            empty_row["温室"] = h
-            latest_rows.append(empty_row)
-            
-    df_latest = pd.DataFrame(latest_rows)
-    cols_to_show = [c for c in df_latest.columns if c not in ["最終入力者"]]
-    return df_latest[cols_to_show]
+            return worksheet, pd.DataFrame(columns=["日付", "作業内容", "更新日時"])
+    except Exception as e:
+        st.error(f"⚠️ スプレッドシート「{SPREADSHEET_NAME}」の接続エラー: {e}")
+        st.stop()
 
-# --- ステート管理 ---
-if "selected_house" not in st.session_state:
-    st.session_state.selected_house = None
-if "selected_group" not in st.session_state:
-    st.session_state.selected_group = None
+worksheet, df_raw = load_data()
 
-# --- UIレイアウト ---
-tab_main, tab_log = st.tabs(["📊 現在の設定一覧", "📋 全履歴ログ"])
+# ステート管理（アプリ起動時に自動で「今日」にセット）
+today = datetime.date.today()
+today_str = today.strftime("%Y-%m-%d")
 
-# --- 1. 現在の設定一覧タブ ---
-with tab_main:
+if "mode" not in st.session_state:
+    st.session_state.mode = "view"
+
+# 起動時・初期化時に「今日」を選択状態にする
+if "focused_date" not in st.session_state:
+    st.session_state.focused_date = today_str
+
+if "current_year_month" not in st.session_state:
+    st.session_state.current_year_month = (today.year, today.month)
+
+# --- A. カレンダー ＆ プレビュー画面 ---
+if st.session_state.mode == "view":
+    year, month = st.session_state.current_year_month
     
-    if st.session_state.selected_house is None:
-        st.subheader("📍 各ハウスの現在設定")
-        st.caption("👇 **表の中の行（ハウス）をタップ** すると設定変更画面に進みます")
-        
-        tab_status_d, tab_status_pipe = st.tabs(["🏢 D群・その他", "🏠 パイプハウス"])
-        
-        def render_interactive_table(house_list, df_target, group_name):
-            df_latest = get_latest_status(house_list, df_target)
+    # 月切り替えヘッダー
+    col_prev, col_title, col_next = st.columns([1, 2, 1])
+    with col_prev:
+        if st.button("◀ 前月", use_container_width=True):
+            if month == 1:
+                st.session_state.current_year_month = (year - 1, 12)
+            else:
+                st.session_state.current_year_month = (year, month - 1)
+            st.rerun()
             
-            event = st.dataframe(
-                df_latest,
-                use_container_width=True,
-                hide_index=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key=f"table_{group_name}"
-            )
-            
-            selected_rows = event.selection.get("rows", [])
-            if selected_rows:
-                selected_index = selected_rows[0]
-                house_name = str(df_latest.iloc[selected_index]["温室"])
-                st.session_state.selected_house = house_name
-                st.session_state.selected_group = group_name
-                st.rerun()
-
-        with tab_status_d:
-            render_interactive_table(d_houses, df_main, "d")
-
-        with tab_status_pipe:
-            render_interactive_table(pipe_houses, df_pipe if not df_pipe.empty else df_main, "pipe")
-
-    # 【設定変更フォーム】
-    else:
-        house = st.session_state.selected_house
-        group = st.session_state.selected_group
+    with col_title:
+        st.markdown(f"<h3 style='text-align: center; margin:0;'>{year}年 {month}月</h3>", unsafe_allow_html=True)
         
-        if group == "pipe" and pipe_ws_name:
-            target_ws = ws_pipe
-            target_df = df_pipe
-        else:
-            target_ws = ws_main
-            target_df = df_main
+    with col_next:
+        if st.button("次月 ▶", use_container_width=True):
+            if month == 12:
+                st.session_state.current_year_month = (year + 1, 1)
+            else:
+                st.session_state.current_year_month = (year, month + 1)
+            st.rerun()
 
-        # 戻るボタン
+    st.write("")
+
+    # 日付ごとの作業内容辞書を作成
+    log_map = {}
+    if not df_raw.empty and "日付" in df_raw.columns and "作業内容" in df_raw.columns:
+        for date, group in df_raw.groupby("日付"):
+            if pd.notna(date) and date != "None":
+                content = str(group.iloc[-1]["作業内容"]).strip()
+                if content:
+                    log_map[str(date)] = content
+
+    # 日曜日始まりのカレンダーグリッド描画
+    cal = calendar.monthcalendar(year, month)
+    
+    weekdays_html = [
+        "<div class='weekday-header sun-header'>日</div>", 
+        "<div class='weekday-header'>月</div>", 
+        "<div class='weekday-header'>火</div>", 
+        "<div class='weekday-header'>水</div>", 
+        "<div class='weekday-header'>木</div>", 
+        "<div class='weekday-header'>金</div>", 
+        "<div class='weekday-header sat-header'>土</div>"
+    ]
+    cols = st.columns(7)
+    for idx, day_html in enumerate(weekdays_html):
+        cols[idx].markdown(day_html, unsafe_allow_html=True)
+        
+    st.write("---")
+
+    for week in cal:
+        cols = st.columns(7)
+        for idx, day in enumerate(week):
+            if day == 0:
+                cols[idx].write("")
+            else:
+                date_str = f"{year:04d}-{month:02d}-{day:02d}"
+                has_log = date_str in log_map
+                is_focused = (date_str == st.session_state.focused_date)
+
+                label = f"{day}"
+                if has_log:
+                    label += "\n●"
+
+                btn_type = "primary" if is_focused else "secondary"
+
+                if cols[idx].button(label, key=f"btn_{date_str}", type=btn_type, use_container_width=True):
+                    if st.session_state.focused_date == date_str:
+                        st.session_state.mode = "edit"
+                    else:
+                        st.session_state.focused_date = date_str
+                    st.rerun()
+
+    # --- 下部：選択日付のプレビュー表示エリア ---
+    focused_date_str = st.session_state.focused_date
+    focused_content = log_map.get(focused_date_str, "")
+
+    st.markdown("---")
+    
+    display_text = focused_content if focused_content else '<span class="preview-empty">（作業内容の入力はありません）</span>'
+    
+    preview_html = f'<div class="preview-box"><div class="preview-date">📅 {focused_date_str}</div><div class="preview-content">{display_text}</div></div>'
+    st.markdown(preview_html, unsafe_allow_html=True)
+
+    st.markdown('<div class="edit-btn">', unsafe_allow_html=True)
+    if st.button("✏️ この日の作業内容を編集・入力する", use_container_width=True):
+        st.session_state.mode = "edit"
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# --- B. 作業日誌入力フォーム画面 ---
+else:
+    target_date_str = st.session_state.focused_date
+    current_dt = datetime.datetime.strptime(target_date_str, "%Y-%m-%d").date()
+
+    col_day_prev, col_back, col_day_next = st.columns([1, 2, 1])
+    
+    with col_day_prev:
+        if st.button("◀ 前の日", use_container_width=True):
+            prev_dt = current_dt - datetime.timedelta(days=1)
+            st.session_state.focused_date = prev_dt.strftime("%Y-%m-%d")
+            st.session_state.current_year_month = (prev_dt.year, prev_dt.month)
+            st.rerun()
+
+    with col_back:
         st.markdown('<div class="back-btn">', unsafe_allow_html=True)
-        if st.button("⬅️ 設定一覧に戻る", use_container_width=True):
-            st.session_state.selected_house = None
-            st.session_state.selected_group = None
+        if st.button("⬅ カレンダー", use_container_width=True):
+            st.session_state.mode = "view"
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        
-        st.subheader(f"⚙️ {house} の設定変更")
-        
-        house_latest = target_df[target_df["温室"].astype(str) == str(house)] if not target_df.empty else pd.DataFrame()
-        latest_val = house_latest.iloc[-1] if not house_latest.empty else {}
-        
-        with st.form("house_detail_form", clear_on_submit=True):
-            
-            curr_side = str(latest_val.get("サイド開閉", "全閉"))
-            side_window = st.segmented_control(
-                "🪟 サイド開閉",
-                options=["全開", "半開", "全閉", "-"],
-                default=curr_side if curr_side in ["全開", "半開", "全閉", "-"] else "全閉"
-            )
-            
-            curr_shading = str(latest_val.get("遮光", "開け"))
-            shading = st.segmented_control(
-                "☀️ 遮光カーテン",
-                options=["開け", "閉め", "9-15", "10-14", "-"],
-                default=curr_shading if curr_shading in ["開け", "閉め", "9-15", "10-14", "-"] else "開け"
-            )
-            
-            curr_boiler = str(latest_val.get("ボイラー状態", "停止中"))
-            boiler_status = st.segmented_control(
-                "🔥 ボイラー状態",
-                options=["停止中", "稼働中", "自動", "-"],
-                default=curr_boiler if curr_boiler in ["停止中", "稼働中", "自動", "-"] else "停止中"
-            )
-            
-            st.write("---")
-            
-            def safe_float(val, default):
-                try: return float(val)
-                except: return default
 
-            col1, col2 = st.columns(2)
-            with col1:
-                b_val = safe_float(latest_val.get("ボイラー温度"), 15.0)
-                boiler_temp = st.number_input("ボイラー設定温度 (°C)", value=b_val, step=0.5)
-            with col2:
-                w_val = safe_float(latest_val.get("天側窓温度"), 20.0)
-                window_temp = st.number_input("天側窓設定温度 (°C)", value=w_val, step=0.5)
-                
-            col3, col4 = st.columns(2)
-            with col3:
-                uw_val = safe_float(latest_val.get("上段開閉温度"), 22.0)
-                upper_window_temp = st.number_input("上段開閉温度 (°C)", value=uw_val, step=0.5)
-            with col4:
-                curr_dh = str(latest_val.get("除湿機", "-"))
-                dehumidifier = st.segmented_control(
-                    "💧 除湿機",
-                    options=["稼働", "停止", "-"],
-                    default=curr_dh if curr_dh in ["稼働", "停止", "-"] else "-"
-                )
-            
-            # 保存ボタン
-            st.markdown('<div class="save-btn">', unsafe_allow_html=True)
-            submitted = st.form_submit_button(f"【{house}】の設定を保存")
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-            if submitted:
-                now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                
-                row_data = {
-                    "温室": house,
-                    "サイド開閉": side_window,
-                    "遮光": shading,
-                    "ボイラー状態": boiler_status,
-                    "ボイラー温度": boiler_temp,
-                    "天側窓温度": window_temp,
-                    "上段開閉温度": upper_window_temp,
-                    "除湿機": dehumidifier,
-                    "最終入力者": "Webアプリ",
-                    "更新日時": now_str
-                }
-                
-                if not target_df.empty:
-                    headers = list(target_df.columns)
-                    new_row = [row_data.get(col, "-") for col in headers]
-                else:
-                    new_row = list(row_data.values())
+    with col_day_next:
+        if st.button("次の日 ▶", use_container_width=True):
+            next_dt = current_dt + datetime.timedelta(days=1)
+            st.session_state.focused_date = next_dt.strftime("%Y-%m-%d")
+            st.session_state.current_year_month = (next_dt.year, next_dt.month)
+            st.rerun()
 
-                target_ws.append_row(new_row)
-                st.session_state.selected_house = None
-                st.session_state.selected_group = None
-                st.success(f"✅ {house} の設定を更新しました！")
-                st.rerun()
+    st.subheader(f"📅 {target_date_str} の作業日誌")
 
-# --- 2. ログ閲覧タブ ---
-with tab_log:
-    st.subheader("📋 最新の設定・測定ログ（全履歴）")
-    
-    log_tab_d, log_tab_pipe = st.tabs(["🏢 D群 ログ", "🏠 パイプハウス ログ"])
-    
-    with log_tab_d:
-        if not df_main.empty:
-            st.dataframe(df_main.iloc[::-1].reset_index(drop=True), use_container_width=True, hide_index=True)
-        else:
-            st.info("D群のデータがありません。")
+    existing_log = ""
+    if not df_raw.empty and "日付" in df_raw.columns:
+        date_matched = df_raw[df_raw["日付"] == target_date_str]
+        if not date_matched.empty:
+            existing_log = str(date_matched.iloc[-1].get("作業内容", ""))
+
+    with st.form("journal_form", clear_on_submit=False):
+        work_detail = st.text_area(
+            "📝 作業内容",
+            value=existing_log,
+            height=200,
+            placeholder="本日の作業内容を入力してください"
+        )
+
+        st.markdown('<div class="save-btn">', unsafe_allow_html=True)
+        submitted = st.form_submit_button("日誌を保存する")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if submitted:
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            new_row = [target_date_str, work_detail, now_str]
+
+            # スプレッドシートに追加書き込み
+            worksheet.append_row(new_row)
             
-    with log_tab_pipe:
-        if not df_pipe.empty:
-            st.dataframe(df_pipe.iloc[::-1].reset_index(drop=True), use_container_width=True, hide_index=True)
-        else:
-            st.info("パイプハウスのデータがありません。")
+            # キャッシュをリセットして画面遷移
+            st.cache_data.clear()
+            st.session_state.mode = "view"
+            st.rerun()
