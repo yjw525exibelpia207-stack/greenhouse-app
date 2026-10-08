@@ -5,9 +5,6 @@ from google.oauth2.service_account import Credentials
 import datetime
 import calendar
 
-# カレンダーを日曜日始まりに設定
-calendar.setfirstweekday(calendar.SUNDAY)
-
 # ページ基本設定（スマホ表示最適化）
 st.set_page_config(
     page_title="作業日誌",
@@ -224,8 +221,9 @@ if st.session_state.mode == "view":
                 if content:
                     log_map[str(date)] = content
 
-    # 日曜日始まりのカレンダーグリッド描画
-    cal = calendar.monthcalendar(year, month)
+    # 日曜日始まりのカレンダー（1列目:日、2列目:月、... 7列目:土）
+    cal_obj = calendar.Calendar(firstweekday=calendar.SUNDAY)
+    cal = cal_obj.monthdayscalendar(year, month)
     
     weekdays_html = [
         "<div class='weekday-header sun-header'>日</div>", 
