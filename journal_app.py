@@ -171,13 +171,18 @@ def load_data():
 
 worksheet, df_raw = load_data()
 
-# ステート管理
+# ステート管理（アプリ起動時に自動で「今日」にセット）
+today = datetime.date.today()
+today_str = today.strftime("%Y-%m-%d")
+
 if "mode" not in st.session_state:
     st.session_state.mode = "view"
+
+# 起動時・初期化時に「今日」を選択状態にする
 if "focused_date" not in st.session_state:
-    st.session_state.focused_date = datetime.date.today().strftime("%Y-%m-%d")
+    st.session_state.focused_date = today_str
+
 if "current_year_month" not in st.session_state:
-    today = datetime.date.today()
     st.session_state.current_year_month = (today.year, today.month)
 
 # --- A. カレンダー ＆ プレビュー画面 ---
@@ -233,8 +238,6 @@ if st.session_state.mode == "view":
         cols[idx].markdown(day_html, unsafe_allow_html=True)
         
     st.write("---")
-
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
 
     for week in cal:
         cols = st.columns(7)
